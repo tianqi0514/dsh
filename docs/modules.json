@@ -212,6 +212,25 @@
     ]
   },
   {
+    "path": "packages/plugins/chuanshen",
+    "title": "传神智库工具插件",
+    "phase": "P1",
+    "task": "P1-04",
+    "moduleVersion": "0.1",
+    "status": "in_progress",
+    "directories": [
+      "src",
+      "tests"
+    ],
+    "release": {
+      "version": "0.1.0-alpha.1",
+      "channel": "source-candidate",
+      "date": "2026-09-18",
+      "evidence": "docs/evidence/chuanshen-platform-plugin.md"
+    },
+    "acceptanceNote": "当前为单用户内网验证：真实调用智库服务并使用仓库外凭据；多主体 OAuth/连接器授权尚未验收。"
+  },
+  {
     "path": "packages/plugins/automations",
     "title": "自动化",
     "phase": "P2",
