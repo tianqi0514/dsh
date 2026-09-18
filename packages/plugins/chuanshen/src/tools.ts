@@ -27,7 +27,7 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_document_upload',
-    description: '把允许目录内的真实文件上传到知识空间。上传成功不代表解析完成，随后必须启动加工并检查任务。',
+    description: '把允许目录内的真实文件上传到知识空间。平台通常会按 processing_targets 自动创建加工任务；若回执已有 job_id/parse_job_id，不要重复启动，只需查询任务终态。',
     parameters: {
       space_id: { type: 'string', required: true },
       file_path: { type: 'string', required: true },
@@ -66,6 +66,22 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
     parameters: { document_id: { type: 'string', required: true } },
     output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
     execute: (args, exec) => client.get(`/documents/${encodeURIComponent(args.document_id)}/processing-runs`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_jobs_list',
+    description: '按知识空间和可选状态列出真实后台任务；用于上传回执未完整显示任务 ID 时定位加工任务。',
+    parameters: { space_id: { type: 'string', required: true }, status: { type: 'string' } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(query('/jobs', { space_id: args.space_id, status: args.status }), exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_job_status',
+    description: '读取单个后台任务的真实阶段、百分比、终态和失败原因。任务创建、queued 或 processing 都不等于完成。',
+    parameters: { job_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/jobs/${encodeURIComponent(args.job_id)}`, exec.signal),
   }));
 
   ctx.tools.register(defineTool({

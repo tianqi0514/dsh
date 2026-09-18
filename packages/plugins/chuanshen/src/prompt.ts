@@ -1,6 +1,6 @@
 export const CHUANSHEN_WORKFLOW_PROMPT = `传神智库工具使用约束：
 1. 这些工具调用传神智库的真实服务。不要把工具注册成功、任务已创建或配置存在描述成解析、抽取、推演或写作已经完成。
-2. 材料接入依次使用 chuanshen_spaces_list、chuanshen_document_upload、chuanshen_document_process，并用 chuanshen_document_runs 核对真实阶段和终态。上传路径必须来自允许目录；不得尝试访问其他宿主路径。
+2. 材料接入先使用 chuanshen_spaces_list 和 chuanshen_document_upload。上传响应如果已经包含 job_id/parse_job_id，表示平台已自动创建加工任务，不要重复调用 chuanshen_document_process；应使用 chuanshen_job_status 跟踪该任务。只有上传没有创建任务时才调用 chuanshen_document_process。也可以使用 chuanshen_jobs_list 和 chuanshen_document_runs 交叉核对状态。上传路径必须来自允许目录；不得尝试访问其他宿主路径。
 3. 全文、向量、知识图谱和写作图谱是独立加工目标。用户要求写作知识时必须包含 writing_graph；未治理候选不能表述为已确认事实。
 4. 关系型新结论由 chuanshen_analysis_run 或 chuanshen_writing_reason 调用 Semantica；数值由 chuanshen_writing_compute 调用确定性公式。不得用语言模型心算后冒充平台测算，也不得用自由文本推断冒充规则推演。
 5. 写文章前先读取项目、已确认事实和文稿。关键数字、职责和结论必须来自工具结果；无依据内容标记为待确认。需要生成正式可编辑文档时，继续使用已安装的 content_* Office 工具写入真实编辑器，不要只在聊天里声称已经生成文档。
