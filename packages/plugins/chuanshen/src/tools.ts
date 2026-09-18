@@ -177,8 +177,32 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
   }));
 
   ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_document_create',
+    description: '在妙笔项目中新建一份独立空白文稿并返回 document_id。项目已有文稿且用户要求新文章时，应先调用本工具，再把返回的 document_id 传给 chuanshen_writing_generate；不得让整篇生成覆盖已有正文。',
+    parameters: {
+      project_id: { type: 'string', required: true },
+      title: { type: 'string', required: true },
+      document_type: { type: 'string' },
+      purpose: { type: 'string' },
+      audience: { type: 'string' },
+      writing_requirements: { type: 'string' },
+    },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post('/writing/documents', {
+      project_id: args.project_id,
+      title: args.title,
+      document_type: args.document_type ?? 'response_plan',
+      purpose: args.purpose ?? '',
+      audience: args.audience ?? '',
+      applicability: {},
+      writing_requirements: args.writing_requirements ?? '',
+      content: [],
+    }, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
     name: 'chuanshen_writing_reason',
-    description: '对妙笔项目已确认事实执行 Semantica 规则推演。默认只预览，不由模型生成正式结论。',
+    description: '对妙笔项目已确认事实执行 Semantica 规则推演。默认只预览，不由模型生成正式结论。地震场景若提示缺少确定性判据，应先调用 chuanshen_writing_evaluate_criteria。',
     parameters: { project_id: { type: 'string', required: true }, mode: { type: 'string', enum: ['preview', 'publish'] }, user_confirmed: { type: 'boolean', required: true } },
     output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
     execute: (args, exec) => {
@@ -188,18 +212,39 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
   }));
 
   ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_evaluate_criteria',
+    description: '根据项目已核验事实执行地震等级等确定性判据，生成可供 Semantica 推演使用的已核验判据事实；这不是语言模型判断。',
+    parameters: { project_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post(
+      `/writing/projects/${encodeURIComponent(args.project_id)}/criteria/evaluate`, {}, exec.signal,
+    ),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_compute_baseline',
+    description: '使用项目中已核验的原子事实执行场景基线公式并生成有依赖绑定的权威测算事实。地震资源缺口优先使用本工具，不要把自由输入值冒充已核验事实。',
+    parameters: { project_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post(
+      `/writing/projects/${encodeURIComponent(args.project_id)}/computations/run-baseline`, {}, exec.signal,
+    ),
+  }));
+
+  ctx.tools.register(defineTool({
     name: 'chuanshen_writing_compute',
-    description: '调用妙笔确定性公式计算资源缺口、车辆趟次、医疗压力或路线效用；正式数值必须来自本工具回执。',
+    description: '调用妙笔确定性公式计算资源缺口、车辆趟次、医疗压力或路线效用。只做临时测算时不要传 output_fact_key；生成权威结果事实时，必须同时传 input_fact_ids 和 input_fact_map（公式变量名到已核验 Fact ID），且 inputs 数值须与这些 Fact 一致。地震基线缺口优先调用 chuanshen_writing_compute_baseline。',
     parameters: {
       project_id: { type: 'string', required: true },
       operation: { type: 'string', enum: ['resource_gap', 'shelter_gap', 'water_demand', 'vehicle_trips', 'ambulance_trips', 'medical_pressure', 'route_utility'], required: true },
       inputs: { type: 'json', required: true },
       input_fact_ids: { type: 'array', items: { type: 'string' } },
+      input_fact_map: { type: 'json' },
       output_fact_key: { type: 'string' }, output_label: { type: 'string' }, output_unit: { type: 'string' },
     },
     output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
     execute: (args, exec) => client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/compute`, {
-      operation: args.operation, inputs: args.inputs, parameters: {}, rounding: {}, input_fact_ids: args.input_fact_ids ?? [], input_fact_map: {},
+      operation: args.operation, inputs: args.inputs, parameters: {}, rounding: {}, input_fact_ids: args.input_fact_ids ?? [], input_fact_map: args.input_fact_map ?? {},
       ...(args.output_fact_key ? { output_fact_key: args.output_fact_key } : {}),
       ...(args.output_label ? { output_label: args.output_label } : {}),
       ...(args.output_unit ? { output_unit: args.output_unit } : {}),
@@ -208,7 +253,7 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_writing_generate',
-    description: '启动妙笔真实分章节报告生成任务；返回运行 ID，必须继续查询运行状态，不能立即声称报告完成。',
+    description: '启动妙笔真实分章节报告生成任务；返回运行 ID，必须继续查询运行状态，不能立即声称报告完成。为保护已有正文，用户要求新文章时先调用 chuanshen_writing_document_create，再传入其 document_id。',
     parameters: {
       project_id: { type: 'string', required: true }, document_id: { type: 'string' }, title: { type: 'string' },
       section_keys: { type: 'array', items: { type: 'string' } }, allow_partial: { type: 'boolean' },
@@ -226,6 +271,32 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
     parameters: { run_id: { type: 'string', required: true } },
     output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
     execute: (args, exec) => client.get(`/writing/generation-runs/${encodeURIComponent(args.run_id)}`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_generation_step',
+    description: '真正执行报告生成运行的下一章：消费平台写作 Agent 的 SSE 流，随后调用确定性解析、依赖校验和章节归档。若回执仍为 awaiting_agent，说明还有章节，继续调用本工具；只查询 run 状态不会推进正文。',
+    parameters: { run_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: Math.max(client.options.timeoutMs, 310_000), isConcurrencySafe: () => false,
+    async execute(args, exec) {
+      const runId = encodeURIComponent(args.run_id);
+      const stream = await client.postEventStream(
+        `/writing/generation-runs/${runId}/agent`, {}, exec.signal, 300_000,
+      );
+      const run = await client.post(`/writing/generation-runs/${runId}/finalize`, {}, exec.signal);
+      return { stream, run };
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_generation_cancel',
+    description: '取消一个仍在 queued/running/awaiting_agent/agent_running 的报告生成任务。仅在用户明确要求取消或联调清理时调用。',
+    parameters: { run_id: { type: 'string', required: true }, user_confirmed: { type: 'boolean', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => {
+      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
+      return client.post(`/writing/generation-runs/${encodeURIComponent(args.run_id)}/cancel`, {}, exec.signal);
+    },
   }));
 
   ctx.tools.register(defineTool({

@@ -37,6 +37,24 @@ async function fixture() {
       res.end(JSON.stringify({ id: 'doc-1', accepted: body.length > 0 }));
       return;
     }
+    if (req.url === '/api/v1/conflict') {
+      res.statusCode = 409;
+      res.end(JSON.stringify({ detail: { message: '当前文章已有正文，不能覆盖' } }));
+      return;
+    }
+    if (req.url === '/api/v1/quality-failure') {
+      res.statusCode = 422;
+      res.end(JSON.stringify({ detail: { issues: [
+        { code: 'chapter_occurrence', message: '章节“二、基本情况”尚未生成' },
+        { code: 'missing_section_citation', message: '章节缺少可核验引用' },
+      ] } }));
+      return;
+    }
+    if (req.url === '/api/v1/stream') {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.end('event: tool_started\ndata: {}\n\nevent: turn_completed\ndata: {}\n\n');
+      return;
+    }
     res.statusCode = 404;
     res.end(JSON.stringify({ detail: 'not found' }));
   });
@@ -78,4 +96,29 @@ test('rejects a credential file readable by other users', async t => {
   t.after(() => value.server.close());
   await chmod(value.client.options.credentialFile, 0o644);
   await assert.rejects(value.client.get('/spaces?limit=500', new AbortController().signal), /permissions-too-open/);
+});
+
+test('preserves a safe structured business error message', async t => {
+  const value = await fixture();
+  t.after(() => value.server.close());
+  await assert.rejects(
+    value.client.get('/conflict', new AbortController().signal),
+    /当前文章已有正文，不能覆盖/,
+  );
+});
+
+test('preserves safe quality-gate issue messages', async t => {
+  const value = await fixture();
+  t.after(() => value.server.close());
+  await assert.rejects(
+    value.client.get('/quality-failure', new AbortController().signal),
+    /章节“二、基本情况”尚未生成；章节缺少可核验引用/,
+  );
+});
+
+test('consumes an authenticated agent event stream without exposing event payloads', async t => {
+  const value = await fixture();
+  t.after(() => value.server.close());
+  const result = await value.client.postEventStream('/stream', {}, new AbortController().signal);
+  assert.deepEqual(result, { ok: true, status: 200, event_count: 2, bytes: 62, last_event: 'turn_completed' });
 });

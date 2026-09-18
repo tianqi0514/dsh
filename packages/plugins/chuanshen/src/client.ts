@@ -26,6 +26,19 @@ function errorMessage(body: JsonValue, status: number): string {
     const detail = body.detail;
     const message = body.message;
     if (typeof detail === 'string' && detail.trim()) return detail.trim().slice(0, 1000);
+    if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
+      const detailMessage = detail.message;
+      if (typeof detailMessage === 'string' && detailMessage.trim()) {
+        return detailMessage.trim().slice(0, 1000);
+      }
+      const issues = detail.issues;
+      if (Array.isArray(issues)) {
+        const messages = issues
+          .map(issue => issue && typeof issue === 'object' && !Array.isArray(issue) ? issue.message : null)
+          .filter((message): message is string => typeof message === 'string' && Boolean(message.trim()));
+        if (messages.length) return messages.join('；').slice(0, 1000);
+      }
+    }
     if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 1000);
   }
   return `chuanshen/http-${status}`;
@@ -95,6 +108,57 @@ export class ChuanshenClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(value),
     }, signal);
+  }
+
+  async postEventStream(
+    path: string,
+    value: JsonValue,
+    signal: AbortSignal,
+    timeoutMs = this.options.timeoutMs,
+    retry = true,
+  ): Promise<JsonValue> {
+    if (!this.#accessToken) await this.#login(signal);
+    const combined = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
+    const response = await fetch(`${this.options.apiBaseUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.#accessToken}`,
+      },
+      body: JSON.stringify(value),
+      signal: combined,
+    });
+    if (response.status === 401 && retry) {
+      this.#accessToken = undefined;
+      await this.#login(signal);
+      return this.postEventStream(path, value, signal, timeoutMs, false);
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as JsonValue;
+      throw new Error(errorMessage(body, response.status));
+    }
+    if (!response.body) throw new Error('chuanshen/stream-missing-body');
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let bytes = 0;
+    let eventCount = 0;
+    let lastEvent = '';
+    while (true) {
+      const { done, value: chunk } = await reader.read();
+      if (done) break;
+      bytes += chunk.byteLength;
+      buffer += decoder.decode(chunk, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (line.startsWith('event:')) {
+          eventCount += 1;
+          lastEvent = line.slice(6).trim().slice(0, 120);
+        }
+      }
+    }
+    return { ok: true, status: response.status, event_count: eventCount, bytes, last_event: lastEvent };
   }
 
   async uploadDocument(
