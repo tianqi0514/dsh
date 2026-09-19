@@ -4,7 +4,67 @@ import { ChuanshenClient, query, type JsonValue } from './client.js';
 
 const jsonOutput = {
   schema: { type: 'json' } as const,
-  render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value) }],
+  render: (_args: unknown, value: JsonValue) => [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }],
+};
+
+function record(value: JsonValue | undefined): Record<string, JsonValue> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function rows(value: JsonValue | undefined): JsonValue[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function cell(value: JsonValue | undefined): string {
+  if (value === undefined || value === null) return '';
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return text.replaceAll('|', '\\|').replaceAll('\n', ' ').slice(0, 240);
+}
+
+const impactOutput = {
+  schema: { type: 'json' } as const,
+  render: (_args: unknown, value: JsonValue) => {
+    const root = record(value);
+    const impact = record(root.impact ?? root.propagation);
+    const proposals = rows(impact.content_proposals ?? impact.impacts);
+    const lines = [
+      `### 影响预览`,
+      `状态：${cell(root.status ?? 'preview')}  · 自动覆盖：否`,
+      '',
+      '| 位置 / 节点 | 修改前 | 修改后 / 动作 | 原因 | 类型 |',
+      '|---|---|---|---|---|',
+      ...proposals.slice(0, 100).map(raw => {
+        const item = record(raw);
+        return `| ${cell(item.section ?? item.node_id ?? item.block_id)} | ${cell(item.old_text ?? item.old_value)} | ${cell(item.new_text ?? item.new_value ?? item.action)} | ${cell(item.reason ?? item.relation)} | ${cell(item.impact_type ?? item.certainty)} |`;
+      }),
+    ];
+    const suspected = rows(impact.suspected_impacts);
+    if (suspected.length) lines.push('', `另有 ${suspected.length} 项疑似影响，仅提示人工核对，不会自动修改。`);
+    lines.push('', '<details><summary>结构化原始结果</summary>', '', '```json', JSON.stringify(value, null, 2), '```', '</details>');
+    return [{ type: 'text' as const, text: lines.join('\n') }];
+  },
+};
+
+const inheritanceOutput = {
+  schema: { type: 'json' } as const,
+  render: (_args: unknown, value: JsonValue) => {
+    const root = record(value);
+    const alignments = rows(root.alignment ?? root.alignments);
+    const lines = [
+      '### 继承 Diff',
+      '历史材料仅借结构，不继承历史项目值。',
+      '',
+      '| 节点 | 当前项目事实 | 判定 | 状态 | 单位 |',
+      '|---|---|---|---|---|',
+      ...alignments.slice(0, 200).map(raw => {
+        const item = record(raw);
+        return `| ${cell(item.label ?? item.node_key)} | ${cell(item.current_value)} | ${cell(item.decision)} | ${cell(item.status)} | ${cell(item.current_unit ?? item.expected_unit)} |`;
+      }),
+      '',
+      '<details><summary>结构化原始结果</summary>', '', '```json', JSON.stringify(value, null, 2), '```', '</details>',
+    ];
+    return [{ type: 'text' as const, text: lines.join('\n') }];
+  },
 };
 
 const targets = { type: 'array' as const, items: { type: 'string' as const, enum: ['fulltext', 'vector', 'graph', 'writing_graph'] } };
@@ -161,6 +221,24 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
   }));
 
   ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_project_create',
+    description: '创建一个真实妙笔写作项目。知识空间、写作图谱和场景均可按业务准备情况传入；不得以项目创建成功代替资料加工或报告生成完成。',
+    parameters: {
+      name: { type: 'string', required: true }, code: { type: 'string' },
+      space_id: { type: 'string' }, scenario_package_version_id: { type: 'string' },
+      writing_graph_release_id: { type: 'string' },
+    },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post('/writing/projects', {
+      name: args.name, ...(args.code ? { code: args.code } : {}),
+      ...(args.space_id ? { space_id: args.space_id } : {}),
+      ...(args.scenario_package_version_id ? { scenario_package_version_id: args.scenario_package_version_id } : {}),
+      ...(args.writing_graph_release_id ? { writing_graph_release_id: args.writing_graph_release_id } : {}),
+      config: {},
+    }, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
     name: 'chuanshen_writing_project_context',
     description: '读取妙笔项目、已确认事实和文稿清单，为写作建立真实上下文。',
     parameters: { project_id: { type: 'string', required: true } },
@@ -173,6 +251,110 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
         client.get(`/writing/projects/${id}/documents`, exec.signal),
       ]);
       return { project, facts, documents };
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_corpus_create',
+    description: '把项目内已锁定资料投影为版本化语料包。历史样稿只生成脱敏骨架，不向写作 Agent 提供历史项目数值。',
+    parameters: {
+      project_id: { type: 'string', required: true }, code: { type: 'string', required: true },
+      name: { type: 'string', required: true },
+      source_material_ids: { type: 'array', items: { type: 'string' }, required: true },
+      writing_graph_release_id: { type: 'string' },
+    },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/corpus-packages`, {
+      code: args.code, name: args.name, source_material_ids: args.source_material_ids,
+      ...(args.writing_graph_release_id ? { writing_graph_release_id: args.writing_graph_release_id } : {}),
+    }, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_corpus_manifest',
+    description: '读取语料包版本、来源和产物清单，检查是否已经形成可用的脱敏骨架。',
+    parameters: { package_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/corpus-packages/${encodeURIComponent(args.package_id)}`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_corpus_artifacts',
+    description: '读取语料包的规范产物映射、目录、脱敏骨架和文风信息；不得把 skeleton 槽位当作当前项目值。',
+    parameters: { package_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/corpus-packages/${encodeURIComponent(args.package_id)}/artifacts`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_facts',
+    description: '列出当前写作项目的权威事实版本、核验状态、单位和来源。只有 verified 且适用范围有效的 Fact 可进入正式数值和结论。',
+    parameters: { project_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/projects/${encodeURIComponent(args.project_id)}/facts`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_fact_confirm',
+    description: '在用户明确确认后接受、拒绝或人工修正一个项目事实。override 必须给出 new_value 和原因。',
+    parameters: {
+      project_id: { type: 'string', required: true }, fact_id: { type: 'string', required: true },
+      decision: { type: 'string', enum: ['confirm', 'reject', 'override'], required: true },
+      reason: { type: 'string', required: true }, new_value: { type: 'json' },
+      user_confirmed: { type: 'boolean', required: true },
+    },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => {
+      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
+      return client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/facts/${encodeURIComponent(args.fact_id)}/confirm`, {
+        decision: args.decision, reason: args.reason, ...(args.new_value ? { new_value: args.new_value } : {}),
+      }, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_graph_release',
+    description: '在用户明确确认后发布指定空间已治理的写作图谱，形成不可变 WritingGraphRelease。',
+    parameters: { space_id: { type: 'string', required: true }, user_confirmed: { type: 'boolean', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => {
+      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
+      return client.post('/writing-graph/releases', { space_id: args.space_id }, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_inheritance_preview',
+    description: '对比历史语料结构与当前项目事实，输出可采用、需换算、可重算、缺失或不适用节点。历史数值永不继承。',
+    parameters: { project_id: { type: 'string', required: true }, corpus_package_version_id: { type: 'string', required: true } },
+    output: inheritanceOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/inheritance/preview`, {
+      corpus_package_version_id: args.corpus_package_version_id,
+    }, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_inheritance_todo',
+    description: '读取一次继承对齐的缺失事实、单位冲突和阻断项。',
+    parameters: { project_id: { type: 'string', required: true }, alignment_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/projects/${encodeURIComponent(args.project_id)}/inheritance/${encodeURIComponent(args.alignment_id)}`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_inheritance_apply',
+    description: '应用用户选择的继承决定，只采用当前项目值、重算结构或不适用剪枝，绝不写入历史样稿值。',
+    parameters: {
+      project_id: { type: 'string', required: true }, alignment_id: { type: 'string', required: true },
+      accepted_node_keys: { type: 'array', items: { type: 'string' }, required: true },
+      user_confirmed: { type: 'boolean', required: true },
+    },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => {
+      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
+      return client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/inheritance/apply`, {
+        alignment_id: args.alignment_id, accepted_node_keys: args.accepted_node_keys,
+      }, exec.signal);
     },
   }));
 
@@ -300,13 +482,69 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
   }));
 
   ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_chunk_get',
+    description: '读取当前或指定文稿版本的正式 Chunk 及其稳定依赖绑定。',
+    parameters: { document_id: { type: 'string', required: true }, version_id: { type: 'string' } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(query(`/writing/documents/${encodeURIComponent(args.document_id)}/chunks`, {
+      version_id: args.version_id,
+    }), exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_chunk_evidence',
+    description: '读取文稿每个 Chunk 对应的 Fact、Evidence、Relation、ComputationRun 和公开标准引用。',
+    parameters: { document_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/documents/${encodeURIComponent(args.document_id)}/paragraph-evidence`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_changeset_create',
+    description: '为 Plate 编辑事件创建三层 Diff 预览，返回 ADD/DEL/MOD/MOVE、语义判定和传播路径；不会修改正文。',
+    parameters: {
+      document_id: { type: 'string', required: true },
+      operations: { type: 'json', required: true },
+    },
+    output: impactOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post(`/writing/documents/${encodeURIComponent(args.document_id)}/changesets/preview`, {
+      operations: args.operations,
+    }, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_changeset_classify',
+    description: '读取编辑 Diff 的确定性语义分类和传播闭包。模型辅助项仍需人工确认，不能据此自动扩大影响范围。',
+    parameters: { document_id: { type: 'string', required: true }, changeset_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/documents/${encodeURIComponent(args.document_id)}/changesets/${encodeURIComponent(args.changeset_id)}`, exec.signal),
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_changeset_apply',
+    description: '应用用户选择的普通措辞或结构编辑。受控数字会被拒绝并要求转入事实变更影响预览。',
+    parameters: {
+      document_id: { type: 'string', required: true }, changeset_id: { type: 'string', required: true },
+      accepted_operation_indexes: { type: 'array', items: { type: 'integer' }, required: true },
+      user_confirmed: { type: 'boolean', required: true },
+    },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => {
+      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
+      return client.post(`/writing/documents/${encodeURIComponent(args.document_id)}/changesets/${encodeURIComponent(args.changeset_id)}/apply`, {
+        accepted_operation_indexes: args.accepted_operation_indexes,
+      }, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
     name: 'chuanshen_writing_change_preview',
     description: '预览一个权威事实变更对计算结果和正文 Chunk 的直接/间接影响；不会修改正式事实或正文。',
     parameters: {
       project_id: { type: 'string', required: true }, document_id: { type: 'string', required: true },
       fact_key: { type: 'string', required: true }, new_value: { type: 'json', required: true }, reason: { type: 'string', required: true },
     },
-    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    output: impactOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
     execute: (args, exec) => client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/input-changes/preview`, {
       document_id: args.document_id, changes: [{ fact_key: args.fact_key, new_value: args.new_value, reason: args.reason }],
     }, exec.signal),
@@ -326,6 +564,28 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
         preview_id: args.preview_id, ...(args.accepted_block_ids ? { accepted_block_ids: args.accepted_block_ids } : {}),
       }, exec.signal);
     },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_change_rollback',
+    description: '撤销一次仍位于当前文稿顶端的事实变更，恢复旧 Fact 为当前权威并创建新的回滚文稿版本；历史版本不被删除。',
+    parameters: {
+      project_id: { type: 'string', required: true }, preview_id: { type: 'string', required: true },
+      user_confirmed: { type: 'boolean', required: true },
+    },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => {
+      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
+      return client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/input-changes/${encodeURIComponent(args.preview_id)}/rollback`, {}, exec.signal);
+    },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_version_compare',
+    description: '列出文稿不可变版本，供用户核对事实变更或回滚前后的版本。',
+    parameters: { document_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/documents/${encodeURIComponent(args.document_id)}/versions`, exec.signal),
   }));
 
   ctx.tools.register(defineTool({
@@ -349,5 +609,13 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
       if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
       return client.post(`/writing/documents/${encodeURIComponent(args.document_id)}/exports`, { output_format: args.output_format }, exec.signal);
     },
+  }));
+
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_export_status',
+    description: '读取文稿真实导出任务及其状态、校验和和下载对象。创建任务不等于导出成功。',
+    parameters: { document_id: { type: 'string', required: true } },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    execute: (args, exec) => client.get(`/writing/documents/${encodeURIComponent(args.document_id)}/exports`, exec.signal),
   }));
 }
