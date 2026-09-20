@@ -1,8 +1,10 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-system-prompt';
 import type {} from '@deepseek-ai/dsh-tools';
+import type {} from '@deepseek-ai/dsh-client-connection';
 import { resolve } from 'node:path';
 import { ChuanshenClient } from './client.js';
+import { registerChuanshenConnection } from './connection-api.js';
 import { CHUANSHEN_WORKFLOW_PROMPT } from './prompt.js';
 import { registerChuanshenTools } from './tools.js';
 
@@ -11,7 +13,7 @@ export * from './tools.js';
 export { CHUANSHEN_WORKFLOW_PROMPT } from './prompt.js';
 
 export const name = 'workdsh-plugin-chuanshen';
-export const inject = ['tools', 'systemPrompt'];
+export const inject = ['tools', 'systemPrompt', 'connection'];
 
 export function apply(ctx: Context): void {
   const client = new ChuanshenClient({
@@ -21,6 +23,7 @@ export function apply(ctx: Context): void {
     timeoutMs: Number(process.env.CHUANSHEN_TOOL_TIMEOUT_MS ?? 120_000),
   });
   registerChuanshenTools(ctx, client);
+  registerChuanshenConnection(ctx, client);
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'workdsh:chuanshen-platform',
     order: ctx.systemPrompt.getSectionOrder('TOOL_REPORT'),

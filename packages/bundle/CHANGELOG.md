@@ -1,3 +1,8 @@
+## 0.1.0-alpha.48 — 2026-09-20
+
+- 组合 workbench alpha.12 与传神智库插件 alpha.2：在 DSH 原生侧栏、主面板和工具卡片中直观展示资料接入、知识图谱、Semantica 推演、可控写作和事实联动能力。
+- 传神业务仍由智库 FastAPI 和 46 个受控工具执行，DSH 不直连业务数据库与中间件。
+
 # 0.1.0-alpha.47 — 2026-09-20
 
 - 通过 DSH 官方 `__DSH_FILE_UPLOAD__` 页面传输扩展点启用同源 Fetch 上传，修复部分 Chromium 中 Blob Worker URL 在加载前被撤销、所有文件均立即显示上传失败的问题。

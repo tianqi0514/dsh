@@ -2,6 +2,13 @@
 
 本插件把传神智库已有的解析抽取、知识检索、写作图谱、Semantica 规则推演、确定性测算和妙笔写作能力注册为 NexusOne 原生工具。它不复制解析器、Datalog 引擎、SQL 执行器或写作数据库。
 
+## DSH 中的可见形式
+
+- 左侧「传神智库」是 DSH 原生 `sidebar.panellist` 入口，主区域是原生 `main` Slot，不是 iframe。
+- 工作台从智库实时 API 读取知识空间、写作项目、推演准备度和 Evidence/Entity/Claim/Fact/Relation 五层数量。
+- 「接入并加工资料」「生成推演报告」「演示事实联动」会创建 DSH 原生 Conversation，仍由原生 Agent Loop 运行。
+- 46 个工具在会话内使用中文业务卡片；输入和原始结果仅在用户展开时显示。
+
 ## 安全配置
 
 运行时读取以下环境变量：

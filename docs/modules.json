@@ -226,12 +226,12 @@
       "tests"
     ],
     "release": {
-      "version": "0.1.0-alpha.1",
+      "version": "0.1.0-alpha.2",
       "channel": "source-candidate",
-      "date": "2026-09-18",
+      "date": "2026-09-20",
       "evidence": "docs/evidence/chuanshen-platform-plugin.md"
     },
-    "acceptanceNote": "当前为单用户内网验证：真实调用智库服务并使用仓库外凭据；多主体 OAuth/连接器授权尚未验收。"
+    "acceptanceNote": "当前为单用户内网验证：真实调用智库服务并使用仓库外凭据；通过 DSH 原生主面板和工具卡片展示能力；多主体 OAuth/连接器授权尚未验收。"
   },
   {
     "path": "packages/plugins/automations",
