@@ -41,7 +41,11 @@ export function NavigationLocation({ usePanelInfo, panelToView, selectView }: Na
             return;
           }
           attempts += 1;
-          if (attempts < 80) {
+          // A cold preview start can spend several seconds loading the official
+          // client graph before business plugins register their main panels.
+          // Keep the requested product URL during that bounded startup window
+          // instead of prematurely rewriting it to the conversation view.
+          if (attempts < 600) {
             timer = window.setTimeout(restoreKnownView, 25);
             return;
           }
