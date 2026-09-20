@@ -14,6 +14,7 @@ export function NavigationLocation({ usePanelInfo, initialProductView, panelToVi
   const active = usePanelInfo((info: PanelInfo) => info.activePanelId);
   const initialized = useRef(false);
   const restoring = useRef(false);
+  const startupRestoring = useRef(false);
   useEffect(() => {
     const restore = () => {
       restoring.current = true;
@@ -23,6 +24,43 @@ export function NavigationLocation({ usePanelInfo, initialProductView, panelToVi
     return () => window.removeEventListener('popstate', restore);
   }, [selectView]);
   useEffect(() => {
+    if (!initialProductView || initialProductView === 'conversation' || !Object.values(panelToView).includes(initialProductView)) return;
+    let cancelled = false;
+    let timer: number | undefined;
+    let attempts = 0;
+    startupRestoring.current = true;
+    const stabilize = () => {
+      if (cancelled) return;
+      const selected = selectView(initialProductView);
+      if (selected) {
+        const url = new URL(window.location.href);
+        if (url.searchParams.get('workdsh-view') !== initialProductView) {
+          url.searchParams.set('workdsh-view', initialProductView);
+          window.history.replaceState(window.history.state, '', url);
+        }
+      }
+      attempts += 1;
+      if (attempts < 150) {
+        timer = window.setTimeout(stabilize, 100);
+        return;
+      }
+      // The official first-run notice can reset the selected panel late in a
+      // cold boot. Finish with one authoritative restore after the client graph
+      // has had a bounded 15-second stabilization window.
+      selectView(initialProductView);
+      startupRestoring.current = false;
+      initialized.current = true;
+      restoring.current = true;
+    };
+    stabilize();
+    return () => {
+      cancelled = true;
+      startupRestoring.current = false;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [initialProductView, panelToView, selectView]);
+  useEffect(() => {
+    if (startupRestoring.current) return;
     if (!initialized.current) {
       // Restore after the official Client boot has composed the feature entries,
       // rather than while one feature's apply is still awaiting its services.
