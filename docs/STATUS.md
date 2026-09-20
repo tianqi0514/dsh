@@ -1902,3 +1902,11 @@ Office build/typecheck 以及 content/download/rich-editor 30 项相关测试通
 将 `kenlinwei001-a11y/dshwork` 的最新 `main` 合并到传神二开分支，保留 `workdsh-plugin-chuanshen` 与 Web 附件上传修复，同时接入上游 Projects 工作区、项目归档/筛选/能力选择、纵向技能池和 DSH `0.1.6-alpha.2` 依赖基线。预览安装器现在同时安装 Projects 和传神插件；组合包增至 `0.1.0-alpha.47`，避免与上游 `alpha.46` 缓存混用。
 
 合并后全量 build 和 typecheck 通过；集成测试 113/113、Projects 10/10、传神插件 8/8、附件上传与 bundle 生命周期 4/4、规划测试 2/2 通过。规划检查发现 `docs/modules.json` 仍指向已更名前的 `resources/skills/expert-manager`，已更正为真实目录 `workdsh-expert-manager`，随后 30 个模块、50 份文档检查通过；513 个 DSH 锁定项均为 `0.1.6-alpha.2`。
+
+### 服务器部署与浏览器回归
+
+合并提交已推送到用户交付仓库的 `codex/controlled-writing-plugin` 分支，并部署到 `10.5.113.232` 的 `/home/tianqi/dshwork`。部署前将服务器已有的 5 个传神插件改动保存到本地安全分支 `backup/server-before-dshwork-alpha6-20260920`；运行目录 `.cache/`、`.local/`、`.secrets/` 和 `workspace/` 原样保留，没有删除 Volume 或业务数据。Profile 清单另备份到 `/home/tianqi/backups/dsh/pre-alpha6-20260920045024`。
+
+服务器使用 Node 22.19.0 和 pnpm 10.34.5 完成依赖安装与全量 build；预览 Profile 已安装 DSH `0.1.6-alpha.2`、`workdsh-bundle@0.1.0-alpha.47`、Projects `alpha.2` 和传神插件 `alpha.1`。安装阶段曾因 root 安装产物权限导致服务无法读取 Profile，修正 Profile 所有权后重新启动成功；最终 `workdsh-preview.service` 为 active，认证入口返回 200，未认证入口按预期返回 401。
+
+真实浏览器验证：历史会话“科研楼可研事实联动验收演示”仍可打开，模型仍为 `deepseek-v4-flash-0731`；上游新增 Projects 面板可打开并显示项目创建、状态筛选、搜索和模板入口；新会话文件入口存在。服务重启会刷新一次性访问令牌，令牌不写入本仓库或本记录。
