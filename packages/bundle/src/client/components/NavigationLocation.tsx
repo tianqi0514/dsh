@@ -4,12 +4,13 @@ import type { PanelInfo } from '@deepseek-ai/dsh-client-ui-layout/client';
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 
 type NavigationLocationProps = PropsRuntime<'shell.overlay'> & InjectFace<{
+  readonly initialProductView: string | null;
   readonly panelToView: Readonly<Record<string, string>>;
   readonly selectView: (view: string | null) => string | null;
 }>;
 
 /** URL stores presentation only, never Session identity or authority. */
-export function NavigationLocation({ usePanelInfo, panelToView, selectView }: NavigationLocationProps) {
+export function NavigationLocation({ usePanelInfo, initialProductView, panelToView, selectView }: NavigationLocationProps) {
   const active = usePanelInfo((info: PanelInfo) => info.activePanelId);
   const initialized = useRef(false);
   const restoring = useRef(false);
@@ -26,7 +27,10 @@ export function NavigationLocation({ usePanelInfo, panelToView, selectView }: Na
       // Restore after the official Client boot has composed the feature entries,
       // rather than while one feature's apply is still awaiting its services.
       const url = new URL(window.location.href);
-      const requested = url.searchParams.get('workdsh-view') ?? (url.searchParams.get('diagnostics') === '1' ? 'diagnostics' : null);
+      const currentView = url.searchParams.get('workdsh-view');
+      const requested = initialProductView && initialProductView !== 'conversation'
+        ? initialProductView
+        : currentView ?? (url.searchParams.get('diagnostics') === '1' ? 'diagnostics' : null);
       const knownView = requested !== null && requested !== 'conversation' && Object.values(panelToView).includes(requested);
       if (knownView) {
         let cancelled = false;

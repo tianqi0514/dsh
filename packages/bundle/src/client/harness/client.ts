@@ -16,6 +16,10 @@ const productViews: Readonly<Record<string, string>> = {
   chuanshen: 'workdsh-chuanshen', library: 'workdsh-library', automation: 'workdsh-automation', more: 'workdsh-more',
 };
 
+// Capture the requested product surface before the official preview boot can
+// temporarily normalize the URL while showing its first-run notice.
+const initialProductView = new URL(window.location.href).searchParams.get('workdsh-view');
+
 export function apply(ctx: Context): void {
   // The official shell serves the tab title from its own HTML; pin it to the product name.
   const pinTitle = () => { if (document.title !== 'NexusOne') document.title = 'NexusOne'; };
@@ -57,7 +61,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('sidebar.brand.name', () => ctx.slots.register({ name: 'sidebar.brand.name', priority: -10 }, BrandName));
   ctx.slots.inject('sidebar.brand.mark', () => ctx.slots.register({ name: 'sidebar.brand.mark', priority: -10 }, BrandMark));
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay', id: 'workdsh-location', inject: () => ({ panelToView, selectView }),
+    name: 'shell.overlay', id: 'workdsh-location', inject: () => ({ panelToView, selectView, initialProductView }),
   }, NavigationLocation));
 
   ctx.slots.inject('main', () => {

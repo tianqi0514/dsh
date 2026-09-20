@@ -19,7 +19,7 @@
 
 完成对应 PLAN 任务及 [验收矩阵](../../docs/ACCEPTANCE.md) 场景，记录真实测试证据后才更新状态。先验证公开接口，再实现；Host 入口输出激活/清理标记；Client 通过官方 Slots 提供 WorkDSH 导航、业务面板及诊断面板。新任务直接进入原生 Conversation，诊断页调用真实 pluginInventory Remote，不提供假业务响应。
 
-本地候选版本 **0.1.0-alpha.51**。build/typecheck 使用包内脚本，安装验证由根 scripts/probe-install.mjs 提供。源码经 TypeScript/TSX 编译后打包，不依赖上游 checkout。
+本地候选版本 **0.1.0-alpha.52**。build/typecheck 使用包内脚本，安装验证由根 scripts/probe-install.mjs 提供。源码经 TypeScript/TSX 编译后打包，不依赖上游 checkout。
 
 Skill 已拆为 `workdsh-plugin-skills@0.1.0-alpha.30` 的独立 Host/Client 安装层，本包不再导入或直接调用其初始化函数。开发时运行 `corepack pnpm build` 和 `corepack pnpm preview:install`，由官方 CLI 将这两个精确版本的 tgz 安装到预览 Profile。仅安装本包提供品牌、工作台展示和诊断，不会暗中初始化 Skill；需要技能时显式安装 Skill 包。
 
