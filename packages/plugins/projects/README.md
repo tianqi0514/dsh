@@ -1,5 +1,13 @@
 # WorkDSH 项目管理
 
+## 原生写作组合优化（2026-09-20）
+
+项目输入区显式选择并保存执行 Workspace，新任务不会跟随当前会话或任取首个目录。可从项目已关联的专家中选择本次主笔，也可使用普通 Agent；专家任务通过公开 ExpertsService.prepareExecution/createExecution 使用锁定修订与原生 Session，依赖缺失不回退成普通 Agent。
+
+技能仍是推荐引用，实际加载必须以官方 skill 工具事件为证据，不标注为“已使用”。连接器在首条消息前同步，包括显式空列表；配置被并发修改时禁止将旧组合绑定成新配置。项目任务关联按 Session 幂等，不能把同一任务挂到两个项目。
+
+官方能力复用：锁定 @deepseek-ai/dsh-workspace、dsh-api-session-controller 0.1.6-alpha.2 的 WorkspaceRegistry、原生 Session retention/conversation；跨插件仅使用 workdsh-contracts/experts 公开服务。参考 docs/dsh-v0.1.6-alpha.2/subsystems/workspace.md、docs/design/CHUANSHEN_NATIVE_WRITING_REVIEW.md。本批补业务选择与校验，不新增 Agent、Workspace 或技能加载器。真实模型及浏览器验收由整体写作回归记录，单元测试不代表实测已完成。
+
 状态：**Alpha 实现中**。
 
 项目工作台将指令、技能、专家、连接器、资料库资产、计划和原生 DSH 任务组织在同一项目中，但不复制各领域的权威数据。
@@ -23,7 +31,7 @@
 
 ## 验收与下一步
 
-完成对应 PLAN 任务及 [验收矩阵](../../../docs/ACCEPTANCE.md) 场景，记录真实测试证据后才更新状态。先验证公开接口，再实现；目前仅保留骨架，不声明加载入口、假工具或成功响应。
+完成对应 PLAN 任务及 [验收矩阵](../../../docs/ACCEPTANCE.md) 场景，记录真实测试证据后才更新状态。本插件已有原生项目配置、任务关联和能力选择实现；本次组合修复及实际测试见[原生写作组合证据](../../../docs/evidence/chuanshen-native-project-skills.md)，不能将组件测试等同于真实模型写作验收。
 
 ## 修订 6 的必做补充
 

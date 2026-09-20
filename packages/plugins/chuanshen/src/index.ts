@@ -2,7 +2,10 @@ import type { Context } from '@deepseek-ai/cordis';
 import type {} from '@deepseek-ai/dsh-system-prompt';
 import type {} from '@deepseek-ai/dsh-tools';
 import type {} from '@deepseek-ai/dsh-client-connection';
+import type {} from '@deepseek-ai/dsh-skill';
+import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem';
 import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ChuanshenClient } from './client.js';
 import { registerChuanshenConnection } from './connection-api.js';
 import { CHUANSHEN_WORKFLOW_PROMPT } from './prompt.js';
@@ -13,7 +16,17 @@ export * from './tools.js';
 export { CHUANSHEN_WORKFLOW_PROMPT } from './prompt.js';
 
 export const name = 'workdsh-plugin-chuanshen';
-export const inject = ['tools', 'systemPrompt', 'connection'];
+export const inject = ['tools', 'systemPrompt', 'connection', 'skills'];
+
+/** The official registry owns provider disposal and on-demand skill loading. */
+export function registerChuanshenSkills(ctx: Context): () => void {
+  return ctx.skills.registerProvider(control => new FileSystemSkillProvider(ctx, control, {
+    providerName: 'chuanshen-writing-methods',
+    includeDefaultRoots: false,
+    bundledSkillDir: fileURLToPath(new URL('../resources/skills', import.meta.url)),
+    watch: false,
+  }));
+}
 
 export function apply(ctx: Context): void {
   const client = new ChuanshenClient({
@@ -24,6 +37,7 @@ export function apply(ctx: Context): void {
   });
   registerChuanshenTools(ctx, client);
   registerChuanshenConnection(ctx, client);
+  registerChuanshenSkills(ctx);
   ctx.effect(() => ctx.systemPrompt.section({
     name: 'workdsh:chuanshen-platform',
     order: ctx.systemPrompt.getSectionOrder('TOOL_REPORT'),

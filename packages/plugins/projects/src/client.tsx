@@ -14,6 +14,7 @@ import type { ProjectInputRef, ProjectSnapshot } from 'workdsh-contracts/project
 import { createProjectClient } from './client/management.js';
 import { publishProjectFocus, ProjectsPanel } from './client/ProjectsPanel.js';
 import { ProjectLineageChip } from './client/components/project-lineage/ProjectLineageChip.js';
+import { projectOperationId } from './client/operation-id.js';
 
 declare module '@deepseek-ai/dsh-api-session-controller/client' { interface SessionReferenceSourceMap { workdshProjectTaskStart: unknown; } }
 export const name = 'workdsh-projects-client';
@@ -30,14 +31,16 @@ export function apply(ctx: Context): void {
     const timer = window.setTimeout(() => { lifetime.signal.removeEventListener('abort', onAbort); resolve(); }, milliseconds);
     lifetime.signal.addEventListener('abort', onAbort, { once: true });
   });
-  const startTask = async (snapshot: ProjectSnapshot, prompt: string, references: readonly ProjectInputRef[]): Promise<string> => {
+  const startTask = async (snapshot: ProjectSnapshot, prompt: string, references: readonly ProjectInputRef[], expertId?: string): Promise<string> => {
     const validated = await management.validateInputRefs(snapshot.project.id, references);
-    // alpha.2: the list snapshot has no `current`; the shown Session derives from the
-    // view owner's mainView retention (same rule as the official ui-session publishMain).
-    const state = sessions.list.getSnapshot(), currentId = Object.values(state.byId).find(row => (row.retainedBy.mainView ?? 0) > 0)?.id, current = currentId ? state.byId[currentId] : undefined, workspaces = ctx.workspaces.list.getSnapshot().items;
-    const workspace = (currentId ? workspaces.find(row => row.sessionIds.includes(currentId)) : undefined) ?? workspaces.find(row => row.path === current?.cwd) ?? workspaces[0];
-    if (!workspace) throw new Error('请先选择工作空间。');
-    const sessionId = await sessions.create({ workspaceId: workspace.workspaceId, cwd: workspace.path }), id = String(sessionId);
+    const plan = await management.prepareTask(snapshot.project.id, snapshot.config.id, expertId);
+    const workspace = ctx.workspaces.list.getSnapshot().items.find(row => String(row.workspaceId) === plan.workspace.id);
+    if (!workspace) throw new Error('项目执行位置不可用，请重新选择工作空间。');
+    const sessionId = plan.expert
+      ? (await management.createExpertTask(snapshot.project.id, plan.configRevisionId, plan.expert.id, projectOperationId())).sessionId as Awaited<ReturnType<ISessions['create']>>
+      : await sessions.create({ workspaceId: workspace.workspaceId, cwd: workspace.path });
+    const id = String(sessionId);
+    if (plan.expert) await sessions.refresh();
     const invoke = async (path: string, endpoint: string, payload: unknown) => {
       const response = await fetch(path, { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ endpoint, payload }) });
       const result = await response.json().catch(() => undefined) as { ok?: boolean; error?: { message?: string } } | undefined;
@@ -48,7 +51,8 @@ export function apply(ctx: Context): void {
     const selectedAssetIds = new Set(validated.filter(row => row.kind === 'asset').map(row => row.id)), assets = snapshot.assets.filter(row => selectedAssetIds.has(row.id));
     if (assets.length) await invoke('/api/workdsh-library', 'set-task-selection', { sessionId: id, nodeIds: assets.map(row => row.nodeId) });
     const connectors = snapshot.config.capabilities.filter(row => row.kind === 'connector').map(row => row.id);
-    if (connectors.length) await invoke('/api/workdsh-connectors', 'set-selection', { sessionId: id, connectorIds: connectors });
+    // Explicit empty selection is intentional; never inherit another Session's connectors.
+    await invoke('/api/workdsh-connectors', 'set-selection', { sessionId: id, connectorIds: connectors });
     const visibleReferences = validated.map(row => `${row.kind === 'asset' ? '@资料库' : '@项目'}/${row.label}`).join(' ');
     // alpha.2: scopes only borrow retained generations, so hold an owned reference across
     // the shared initial open and the send, releasing it on every path. Session scopes
@@ -63,7 +67,7 @@ export function apply(ctx: Context): void {
           // The task link lands immediately before the first send: a failed open or a
           // Session that never becomes sendable must not leave an orphan task record,
           // and a later send failure states the created-task fact explicitly.
-          await management.linkTask(snapshot.project.id, id, prompt.slice(0, 80) || snapshot.project.name, undefined, validated);
+          await management.linkTask(snapshot.project.id, id, prompt.slice(0, 80) || snapshot.project.name, undefined, validated, plan.configRevisionId);
           try {
             await conversation.send([prompt, visibleReferences].filter(Boolean).join('\n'));
           } catch {

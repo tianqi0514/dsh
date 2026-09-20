@@ -5,8 +5,18 @@ import type { Agent } from '@deepseek-ai/dsh-agent';
 import { credentialRef } from '@deepseek-ai/dsh-credentials';
 import * as McpClient from '@deepseek-ai/dsh-mcp-client';
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain';
-import type { ConnectorConfigView, ConnectorInput, ConnectorManagementService, ConnectorState, ConnectorSummary } from './shared.js';
+import {
+  DEFAULT_CONNECTOR_TOOL_CALL_TIMEOUT_MS,
+  MAX_CONNECTOR_TOOL_CALL_TIMEOUT_MS,
+  MIN_CONNECTOR_TOOL_CALL_TIMEOUT_MS,
+  type ConnectorConfigView,
+  type ConnectorInput,
+  type ConnectorManagementService,
+  type ConnectorState,
+  type ConnectorSummary,
+} from './shared.js';
 import { connectorDefinitionSchema, connectorSelectionsDomainSpec, connectorsDomainSpec, type ConnectorDefinition, type ConnectorSelection } from './storage.js';
+import { connectorCallDenied, connectorToolOwner } from './selection-policy.js';
 
 declare module '@deepseek-ai/cordis' { interface Context { workdshConnectors: ConnectorManagementService; } }
 
@@ -25,6 +35,7 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
   private selections?: KvTable<string, ConnectorSelection>;
   private readonly runtimes = new Map<string, Runtime>();
   private readonly restrictions = new WeakMap<Agent, () => void>();
+  private readonly restrictionCleanup = new Set<() => void>();
   private serial: Promise<void> = Promise.resolve();
 
   constructor(ctx: Context) { super(ctx, 'workdshConnectors'); }
@@ -40,7 +51,8 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
       const now = new Date().toISOString();
       await this.definitions.put('workdsh-example', {
         id: 'workdsh-example', title: 'WorkDSH MCP 示例', description: '可查询业务目录，并通过 MCP 资源与 URI 模板读取示例资料。',
-        serverName: 'workdsh-example', transport: 'stdio', command: process.execPath, args: [serverPath], enabled: true,
+        serverName: 'workdsh-example', transport: 'stdio', command: process.execPath, args: [serverPath],
+        toolCallTimeoutMs: DEFAULT_CONNECTOR_TOOL_CALL_TIMEOUT_MS, enabled: true,
         createdAt: now, updatedAt: now,
       });
       await domain.global.set({ seededExample: true });
@@ -68,6 +80,7 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
     return { id, title: row.title, description: row.description, serverName: row.serverName, transport: row.transport,
       ...(row.command ? { command: row.command } : {}), ...(row.args ? { args: row.args } : {}), ...(row.url ? { url: row.url } : {}),
       ...(row.credentialHeader ? { credentialHeader: row.credentialHeader } : {}),
+      toolCallTimeoutMs: row.toolCallTimeoutMs,
       authorizationConfigured: credential.configured, authorizationWritable: credential.writable, editable: true };
   }
 
@@ -137,7 +150,7 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
     return unique;
   }
 
-  async dispose(): Promise<void> { for (const [id] of this.runtimes) await this.stop(id, false); }
+  async dispose(): Promise<void> { for (const release of this.restrictionCleanup) release(); for (const [id] of this.runtimes) await this.stop(id, false); }
 
   private async start(definition: ConnectorDefinition): Promise<void> {
     const runtime = this.runtime(definition.id); if (runtime.child) return;
@@ -149,9 +162,9 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
     const transportConfig = definition.transport === 'stdio'
       ? { serverName: definition.serverName, transport: 'stdio' as const, command: definition.command!, args: [...(definition.args ?? [])], env: {} }
       : { serverName: definition.serverName, transport: 'streamable-http' as const, url: definition.url!, headers };
-    const fiber = this.ctx.plugin(McpClient, { ...transportConfig, failOnStartupError: true, toolCallTimeoutMs: 10_000, maxInstructionBytes: 8_192,
+    const fiber = this.ctx.plugin(McpClient, { ...transportConfig, failOnStartupError: true, toolCallTimeoutMs: definition.toolCallTimeoutMs, maxInstructionBytes: 8_192,
       reconnect: { enabled: true, initialDelayMs: 250, maxDelayMs: 5_000, maxAttempts: 4 } }) as ChildFiber & PromiseLike<unknown>;
-    try { await fiber; runtime.child = fiber; runtime.state = 'ready'; }
+    try { await fiber; runtime.child = fiber; runtime.state = 'ready'; this.reapplyRestrictions(); }
     catch (cause) { await fiber.dispose().catch(() => undefined); runtime.state = 'offline'; runtime.diagnostic = cause instanceof Error ? cause.message : 'MCP 服务启动失败。'; throw cause; }
   }
 
@@ -165,14 +178,19 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
     return { id: definition.id, title: definition.title, description: definition.description, serverName: definition.serverName,
       transport: definition.transport, scope: 'shared', enabled: definition.enabled, state: health.state, toolNames: health.toolNames,
       resourceCount: health.resourceCount, resourceTemplateCount: health.resourceTemplateCount, lastCheckedAt: new Date().toISOString(),
+      toolCallTimeoutMs: definition.toolCallTimeoutMs,
       ...(health.diagnostic ? { diagnostic: health.diagnostic } : {}) };
   }
 
   private async health(definition: ConnectorDefinition, signal?: AbortSignal): Promise<{ state: ConnectorState; toolNames: string[]; resourceCount: number; resourceTemplateCount: number; diagnostic?: string }> {
     const runtime = this.runtime(definition.id);
     if (!definition.enabled) return { state: 'disabled', toolNames: [], resourceCount: 0, resourceTemplateCount: 0 };
-    const prefix = `mcp__${definition.serverName}__`; const toolNames = this.ctx.tools.schemas().map(tool => tool.name).filter(name => name.startsWith(prefix));
+    const registered = this.registeredServers();
+    const prefix = `mcp__${definition.serverName}__`;
+    const candidates = this.ctx.tools.schemas().map(tool => tool.name).filter(name => name.startsWith(prefix));
+    const toolNames = candidates.filter(name => connectorToolOwner(name, registered) === definition.serverName);
     if (!runtime.child) return { state: runtime.state, toolNames, resourceCount: 0, resourceTemplateCount: 0, ...(runtime.diagnostic ? { diagnostic: runtime.diagnostic } : {}) };
+    if (!toolNames.length && candidates.length) return { state: 'offline', toolNames, resourceCount: 0, resourceTemplateCount: 0, diagnostic: 'MCP 工具命名空间与其他连接有歧义，请修改冲突的连接名称；现有配置未被自动更改。' };
     if (!toolNames.length) return { state: 'discovering', toolNames, resourceCount: 0, resourceTemplateCount: 0 };
     try {
       const agent = { id: `workdsh-connector-health-${randomUUID()}` } as never;
@@ -196,9 +214,14 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
   }
 
   private normalize(input: ConnectorInput): Omit<ConnectorDefinition, 'id' | 'enabled' | 'createdAt' | 'updatedAt'> {
+    const toolCallTimeoutMs = input.toolCallTimeoutMs ?? DEFAULT_CONNECTOR_TOOL_CALL_TIMEOUT_MS;
+    if (!Number.isInteger(toolCallTimeoutMs)
+      || toolCallTimeoutMs < MIN_CONNECTOR_TOOL_CALL_TIMEOUT_MS
+      || toolCallTimeoutMs > MAX_CONNECTOR_TOOL_CALL_TIMEOUT_MS) throw new Error('connector/invalid-timeout');
     const value = connectorDefinitionSchema.omit({ id: true, enabled: true, createdAt: true, updatedAt: true }).parse({
       title: input.title.trim(), description: input.description?.trim() ?? '', serverName: input.serverName.trim(), transport: input.transport,
       ...(input.credentialHeader?.trim() ? { credentialHeader: input.credentialHeader.trim() } : {}),
+      toolCallTimeoutMs,
       ...(input.transport === 'stdio' ? { command: input.command?.trim(), args: [...(input.args ?? [])] } : { url: input.url?.trim() }),
     });
     if (value.transport === 'stdio' && !value.command) throw new Error('connector/command-required');
@@ -212,15 +235,23 @@ export class ConnectorManager extends Service implements ConnectorManagementServ
   private definition(id: string): ConnectorDefinition { const row = this.table().get(id); if (!row) throw new Error('connector/not-found'); return row; }
   private runtime(id: string): Runtime { let row = this.runtimes.get(id); if (!row) { row = { state: 'disabled' }; this.runtimes.set(id, row); } return row; }
   private table(): KvTable<string, ConnectorDefinition> { if (!this.definitions) throw new Error('connector/unavailable'); return this.definitions; }
+  private registeredServers(): string[] { return [...this.table().entries()].map(([, row]) => row.serverName); }
   private selectionTable(): KvTable<string, ConnectorSelection> { if (!this.selections) throw new Error('connector/unavailable'); return this.selections; }
   private applyRestriction(agent: Agent): void {
     this.restrictions.get(agent)?.();
     this.restrictions.delete(agent);
-    const selected = new Set(this.selectionTable().get(String(agent.id))?.connectorIds ?? []);
-    const denied = [...this.table().entries()]
-      .filter(([id]) => !selected.has(id))
-      .flatMap(([, definition]) => this.ctx.tools.schemas().map(tool => tool.name).filter(name => name.startsWith(`mcp__${definition.serverName}__`)));
-    if (denied.length) this.restrictions.set(agent, agent.ctx.tools.restrict({ deny: denied }));
+    const allowed = () => {
+      const selected = new Set(this.selectionTable().get(String(agent.id))?.connectorIds ?? []);
+      return [...this.table().entries()].filter(([id, definition]) => selected.has(id) && definition.enabled && this.runtime(id).state === 'ready').map(([, definition]) => definition.serverName);
+    };
+    const denied = this.ctx.tools.schemas().map(tool=>tool.name).filter(name=>name.startsWith('mcp__') && connectorCallDenied(name, {}, allowed(), this.registeredServers()));
+    const releaseMask = agent.ctx.tools.restrict({ deny: denied });
+    // Native monotonic guard covers resources and late tool discovery. Child agents
+    // receive their own guard; absence of an explicit child selection denies access.
+    const releaseGuard = agent.ctx.tools.guard(exec => connectorCallDenied(exec.name, exec.arguments, allowed(), this.registeredServers()));
+    const release = () => { releaseMask(); releaseGuard(); this.restrictionCleanup.delete(release); };
+    this.restrictionCleanup.add(release);
+    this.restrictions.set(agent, release);
   }
   private reapplyRestrictions(): void { for (const agent of this.ctx.agents.list()) this.applyRestriction(agent); }
   private async removeFromSelections(connectorId: string): Promise<void> {

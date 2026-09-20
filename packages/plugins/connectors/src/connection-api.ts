@@ -34,9 +34,9 @@ export function registerConnectorManagementConnection(ctx: Context): void {
         }
         return Response.json(fail('connector/invalid-request', '连接器管理请求无效。'), { status: 400 });
       } catch (cause) {
-        const known = new Set(['connector/not-found', 'connector/command-required', 'connector/url-required', 'connector/server-name-conflict']);
+        const known = new Set(['connector/not-found', 'connector/not-ready', 'connector/command-required', 'connector/url-required', 'connector/server-name-conflict', 'connector/invalid-timeout']);
         const code = cause instanceof Error && known.has(cause.message) ? cause.message : 'connector/internal';
-        const messages: Record<string, string> = { 'connector/not-found': '未找到该连接器。', 'connector/command-required': 'stdio 连接需要填写启动命令。', 'connector/url-required': 'HTTP 连接需要填写 MCP URL。', 'connector/server-name-conflict': '服务标识已被其他 MCP 使用。' };
+        const messages: Record<string, string> = { 'connector/not-found': '未找到该连接器。', 'connector/not-ready': '所选连接器未就绪或已停用，请重新选择。', 'connector/command-required': 'stdio 连接需要填写启动命令。', 'connector/url-required': 'HTTP 连接需要填写 MCP URL。', 'connector/server-name-conflict': '服务标识已被其他 MCP 使用。', 'connector/invalid-timeout': '工具调用超时必须是 1–120 秒的整数。' };
         const message = messages[code] ?? '连接器操作失败，请重试。';
         return Response.json(fail(code, message));
       }

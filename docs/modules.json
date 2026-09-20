@@ -544,5 +544,18 @@
       "evidence": "docs/releases/2026-09-15-dsh-0.1.6-alpha.1.md"
     },
     "acceptanceNote": "官方 Team 协作栏布局与状态投影已验证；60 分钟资源收敛和跨平台长任务仍未验收。"
+  },
+  {
+    "path": "packages/plugins/plate",
+    "title": "独立 Plate 受控写作编辑器",
+    "phase": "P1",
+    "task": "user-native-writing",
+    "moduleVersion": "0.1",
+    "status": "in_progress",
+    "directories": [
+      "src",
+      "tests"
+    ],
+    "acceptanceNote": "独立官方右栏资源插件；真实写作与服务器浏览器验收进行中，不接管 Office。"
   }
 ]

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — native writing composition（2026-09-20）
+
+- Bind an explicitly selected native Workspace to each project configuration; remove the active-session/first-workspace fallback when creating tasks.
+- Choose one main author per task and use the public expert execution service with a pinned expert revision. Ordinary Agent tasks remain supported; failed expert readiness never silently falls back.
+- Distinguish recommended Skill references from actual native Skill loading; synchronize connector selections before the first message, including an empty selection.
+- Reject configuration drift before task binding, make Session linkage idempotent, and prevent cross-project re-linking. Disable duplicate sends while a task is being created.
+- Fix the production client import failure caused by a task-submission Hook outside `ProjectsPanel`. Execute the real bundled factory with React before component mounting in regression tests, so typechecking alone cannot conceal this failure.
+
+Verification: module build/typecheck and unit/contract/CSS-browser tests; no real-model or server deployment claim at module level.
+
 ## 0.1.0-alpha.2 — Unreleased（2026-09-18）
 
 - Align with DeepSeek Harness 0.1.6-alpha.2 Client Session generations: retain the target Session (`sessions.retain` → `ready` → send → `release`) before sending a project task message, and open/switch Sessions through the official `uiWorkspace.openSession` navigation.

@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {readFileSync} from 'node:fs';
 import { CHUANSHEN_CAPABILITY_GROUPS, CHUANSHEN_TOOL_PRESENTATIONS } from '../dist/capabilities.js';
 import { buildChuanshenOverview, buildChuanshenSpaceOverview, listRows, overviewItems } from '../dist/overview.js';
 
 test('maps every registered Chuanshen tool to one visible capability group', () => {
-  assert.equal(CHUANSHEN_TOOL_PRESENTATIONS.length, 46);
-  assert.equal(new Set(CHUANSHEN_TOOL_PRESENTATIONS.map(tool => tool.name)).size, 46);
+  const registered = [...readFileSync(new URL('../src/tools.ts',import.meta.url),'utf8').matchAll(/name:\s*'([^']+)'/g)].map(m=>m[1]);
+  assert.equal(CHUANSHEN_TOOL_PRESENTATIONS.length, 50);
+  assert.equal(new Set(CHUANSHEN_TOOL_PRESENTATIONS.map(tool => tool.name)).size, 50);
+  assert.deepEqual(CHUANSHEN_TOOL_PRESENTATIONS.map(t=>t.name).sort(),registered.sort());
   const groupIds = new Set(CHUANSHEN_CAPABILITY_GROUPS.map(group => group.id));
   assert.equal(CHUANSHEN_TOOL_PRESENTATIONS.every(tool => groupIds.has(tool.group)), true);
   assert.equal(CHUANSHEN_CAPABILITY_GROUPS.every(group => CHUANSHEN_TOOL_PRESENTATIONS.some(tool => tool.group === group.id)), true);
@@ -29,7 +32,7 @@ test('builds a real capability overview from Chuanshen API responses', async () 
   };
   const result = await buildChuanshenOverview(client, new AbortController().signal);
   assert.equal(result.status, 'connected');
-  assert.equal(result.toolCount, 46);
+  assert.equal(result.toolCount, 50);
   assert.equal(result.spaces[0].name, '上财科研楼');
   assert.equal(result.projects[0].name, '可研写作');
   assert.equal(result.analysisTasks[0].status, 'completed');

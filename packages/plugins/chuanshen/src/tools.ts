@@ -296,7 +296,7 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_writing_fact_confirm',
-    description: '在用户明确确认后接受、拒绝或人工修正一个项目事实。override 必须给出 new_value 和原因。',
+    description: '按用户明确决策确认或拒绝待治理候选。已采用事实的改值不能走此工具，必须先生成影响预览并在 Plate 中确认。',
     parameters: {
       project_id: { type: 'string', required: true }, fact_id: { type: 'string', required: true },
       decision: { type: 'string', enum: ['confirm', 'reject', 'override'], required: true },
@@ -304,10 +304,15 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
       user_confirmed: { type: 'boolean', required: true },
     },
     output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
-    execute: (args, exec) => {
+    execute: async (args, exec) => {
+      if (args.decision === 'override' || args.new_value !== undefined) throw new Error('chuanshen/trusted-ui-confirmation-required: 改值须先预览影响，再在 Plate 中确认。');
       if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
+      const result = await client.get(`/writing/projects/${encodeURIComponent(args.project_id)}/facts`, exec.signal);
+      const candidates = Array.isArray(result) ? result : (result as {items?: unknown[]}).items ?? [];
+      const fact = candidates.find((row: any) => row.id === args.fact_id) as {verification_status?: string; active?: boolean} | undefined;
+      if (!fact || fact.active === false || !['candidate', 'unverified'].includes(fact.verification_status ?? '')) throw new Error('chuanshen/trusted-ui-confirmation-required: 仅允许治理待确认候选，已采用事实须通过影响预览处理。');
       return client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/facts/${encodeURIComponent(args.fact_id)}/confirm`, {
-        decision: args.decision, reason: args.reason, ...(args.new_value ? { new_value: args.new_value } : {}),
+        decision: args.decision, reason: args.reason,
       }, exec.signal);
     },
   }));
@@ -360,7 +365,7 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_writing_document_create',
-    description: '在妙笔项目中新建一份独立空白文稿并返回 document_id。项目已有文稿且用户要求新文章时，应先调用本工具，再把返回的 document_id 传给 chuanshen_writing_generate；不得让整篇生成覆盖已有正文。',
+    description: '在妙笔项目中新建一份独立空白文稿并返回 document_id 和初始版本。项目已有文稿时必须调用本工具，不能复用或覆盖旧 document_id。标题在项目内唯一；调用结果不明确时先用 chuanshen_writing_project_context 查找同名文稿，禁止改名后盲目重复创建。',
     parameters: {
       project_id: { type: 'string', required: true },
       title: { type: 'string', required: true },
@@ -415,10 +420,14 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_writing_compute',
-    description: '调用妙笔确定性公式计算资源缺口、车辆趟次、医疗压力或路线效用。只做临时测算时不要传 output_fact_key；生成权威结果事实时，必须同时传 input_fact_ids 和 input_fact_map（公式变量名到已核验 Fact ID），且 inputs 数值须与这些 Fact 一致。地震基线缺口优先调用 chuanshen_writing_compute_baseline。',
+    description: '调用妙笔确定性公式计算资源缺口、工程量金额、投资比例、金额差异、车辆趟次、医疗压力或路线效用。只做临时测算时不要传 output_fact_key；生成权威结果事实时，必须同时传 input_fact_ids 和 input_fact_map（公式变量名到已核验 Fact ID），且 inputs 数值须与这些 Fact 一致。地震基线缺口优先调用 chuanshen_writing_compute_baseline。',
     parameters: {
       project_id: { type: 'string', required: true },
-      operation: { type: 'string', enum: ['resource_gap', 'shelter_gap', 'water_demand', 'vehicle_trips', 'ambulance_trips', 'medical_pressure', 'route_utility'], required: true },
+      operation: { type: 'string', enum: [
+        'resource_gap', 'shelter_gap', 'water_demand', 'vehicle_trips', 'ambulance_trips',
+        'medical_pressure', 'route_utility', 'quantity_amount', 'construction_installation_cost',
+        'basic_reserve', 'total_investment', 'investment_ratio', 'amount_difference',
+      ], required: true },
       inputs: { type: 'json', required: true },
       input_fact_ids: { type: 'array', items: { type: 'string' } },
       input_fact_map: { type: 'json' },
@@ -448,6 +457,39 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
   }));
 
   ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_outline',
+    description: '读取当前文章目录，或保存当前 DSH 主笔建议的目录。保存需 base_version_id 和 request_id，sections 遵循工作包目录契约。不会生成正文。',
+    parameters: {document_id:{type:'string',required:true},base_version_id:{type:'string'},request_id:{type:'string'},sections:{type:'json'}},
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => args.sections === undefined
+      ? client.get(`/writing/documents/${encodeURIComponent(args.document_id)}/native-outline`, exec.signal)
+      : client.put(`/writing/documents/${encodeURIComponent(args.document_id)}/native-outline`, {base_version_id:args.base_version_id ?? null, request_id:args.request_id ?? null, sections:args.sections}, exec.signal),
+  }));
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_section_context',
+    description: '为当前 DSH 主笔获取不可变章节工作包。使用返回的事实、依据和计算写作，不启动智库内部 Agent。接着调用 section_submit，逐章完成。',
+    parameters: { document_id: {type: 'string', required: true}, section_key: {type: 'string', required: true}, request_id: {type: 'string', required: true},fact_keys:{type:'array',items:{type:'string'}},source_chunk_ids:{type:'array',items:{type:'string'}} },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post(`/writing/documents/${encodeURIComponent(args.document_id)}/native-chapters/work-package`, {section_key: args.section_key, request_id: args.request_id,...(args.fact_keys?{fact_keys:args.fact_keys}:{}),...(args.source_chunk_ids?{source_chunk_ids:args.source_chunk_ids}:{})}, exec.signal),
+  }));
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_section_submit',
+    description: '提交当前 DSH Agent 写出的章节 Plate 块与精确来源绑定。必须按章节工作包 output_schema，正文由服务校验后保存；无效来源、无依据数字和旧版本将被拒绝。不代写正文。',
+    parameters: { document_id: {type: 'string', required: true}, work_package_id: {type: 'string', required: true}, checksum: {type: 'string', required: true}, request_id: {type: 'string', required: true}, draft_blocks: {type:'json',required:true}, bindings:{type:'json',required:true} },
+    output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
+    execute: (args, exec) => client.post(`/writing/documents/${encodeURIComponent(args.document_id)}/native-chapters/${encodeURIComponent(args.work_package_id)}/submit`, {checksum: args.checksum, request_id: args.request_id, draft_blocks: args.draft_blocks, bindings: args.bindings}, exec.signal),
+  }));
+  ctx.tools.register(defineTool({
+    name: 'chuanshen_writing_open',
+    description: '读取真实文稿并返回独立 Plate 资源地址；不会创建另一份正文或启动 Office。',
+    parameters: { document_id: {type: 'string', required: true} },
+    output: {schema: {type:'json'}, render: (_args, value) => [{type:'text',text:`[在 Plate 中打开文稿](${record(value).resource_address})\n\n${JSON.stringify(value, null, 2)}`}]}, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => true,
+    async execute(args, exec) {
+      const document = await client.get(`/writing/documents/${encodeURIComponent(args.document_id)}`, exec.signal);
+      return {document, resource_address: `dsh-resource://chuanshen-writing/${encodeURIComponent(args.document_id)}`, editor: 'Plate'};
+    },
+  }));
+  ctx.tools.register(defineTool({
     name: 'chuanshen_writing_generation_run',
     description: '读取真实报告生成运行的阶段、进度、错误和最终文稿引用。',
     parameters: { run_id: { type: 'string', required: true } },
@@ -457,7 +499,7 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_writing_generation_step',
-    description: '真正执行报告生成运行的下一章：消费平台写作 Agent 的 SSE 流，随后调用确定性解析、依赖校验和章节归档。若回执仍为 awaiting_agent，说明还有章节，继续调用本工具；只查询 run 状态不会推进正文。',
+    description: '仅兼容已有智库写作运行：执行平台内部 Agent 下一章。DSH 原生主笔写新报告应使用 section_context 和 section_submit，不要新建本链路。',
     parameters: { run_id: { type: 'string', required: true } },
     output: jsonOutput, timeoutMs: Math.max(client.options.timeoutMs, 310_000), isConcurrencySafe: () => false,
     async execute(args, exec) {
@@ -552,31 +594,27 @@ export function registerChuanshenTools(ctx: Context, client: ChuanshenClient): v
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_writing_change_apply',
-    description: '按用户选择应用已生成的事实影响预览。只有明确接受后才能调用；未选择的块保持不变并应标记过期。',
+    description: '确认事实联动的入口说明。实际应用只能在独立 Plate 影响弹窗中由用户勾选确认；模型传入 user_confirmed 不构成用户回执。',
     parameters: {
       project_id: { type: 'string', required: true }, preview_id: { type: 'string', required: true },
       accepted_block_ids: { type: 'array', items: { type: 'string' } }, user_confirmed: { type: 'boolean', required: true },
     },
     output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
     execute: (args, exec) => {
-      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
-      return client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/input-changes/apply`, {
-        preview_id: args.preview_id, ...(args.accepted_block_ids ? { accepted_block_ids: args.accepted_block_ids } : {}),
-      }, exec.signal);
+      throw new Error('chuanshen/trusted-ui-confirmation-required: 请在 Plate 的影响预览中勾选并应用；Agent 不能代替用户确认。');
     },
   }));
 
   ctx.tools.register(defineTool({
     name: 'chuanshen_writing_change_rollback',
-    description: '撤销一次仍位于当前文稿顶端的事实变更，恢复旧 Fact 为当前权威并创建新的回滚文稿版本；历史版本不被删除。',
+    description: '撤销联动请在 Plate 由用户操作。模型提供的 user_confirmed 布尔值不能作为回滚授权。',
     parameters: {
       project_id: { type: 'string', required: true }, preview_id: { type: 'string', required: true },
       user_confirmed: { type: 'boolean', required: true },
     },
     output: jsonOutput, timeoutMs: client.options.timeoutMs, isConcurrencySafe: () => false,
     execute: (args, exec) => {
-      if (!args.user_confirmed) throw new Error('chuanshen/user-confirmation-required');
-      return client.post(`/writing/projects/${encodeURIComponent(args.project_id)}/input-changes/${encodeURIComponent(args.preview_id)}/rollback`, {}, exec.signal);
+      throw new Error('chuanshen/trusted-ui-confirmation-required: 请在 Plate 点击撤销上次联动。');
     },
   }));
 

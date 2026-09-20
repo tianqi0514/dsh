@@ -17,6 +17,10 @@ export const CHUANSHEN_CAPABILITY_GROUPS = [
 ] as const;
 
 export const CHUANSHEN_TOOL_PRESENTATIONS = [
+  { name: 'chuanshen_writing_section_context', label: '读取章节工作包', group: 'writing', summary: '固定事实、依据、计算和当前正文版本' },
+  { name: 'chuanshen_writing_outline', label: '文章目录', group: 'writing', summary: 'DSH 主笔规划目录，平台版本化保存' },
+  { name: 'chuanshen_writing_section_submit', label: '校验并保存章节', group: 'writing', summary: '保存当前 DSH 主笔的正文与精确绑定' },
+  { name: 'chuanshen_writing_open', label: '打开 Plate 文稿', group: 'writing', summary: '独立编辑、查看依据和预览事实变更' },
   { name: 'chuanshen_spaces_list', label: '读取知识空间', group: 'ingestion', summary: '列出当前可用知识空间' },
   { name: 'chuanshen_documents_list', label: '读取空间文档', group: 'ingestion', summary: '查看文档、版本和处理状态' },
   { name: 'chuanshen_document_upload', label: '上传业务材料', group: 'ingestion', summary: '将允许目录中的真实文件上传到智库' },

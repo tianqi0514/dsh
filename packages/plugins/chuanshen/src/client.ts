@@ -15,6 +15,23 @@ interface CredentialFile {
   password: string;
 }
 
+export class PlatformError extends Error {
+  constructor(readonly status: number, message: string) { super(message); this.name = 'PlatformError'; }
+}
+
+function safeError(value: string): string {
+  return value.replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(/(?:sk-|sk_)[A-Za-z0-9_-]{8,}/g, '[redacted]')
+    .replace(
+      /(["']?(?:password|api[_-]?key|token|secret)["']?)\s*[=:]\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,"'}、，；。]+)/gi,
+      '$1=[redacted]',
+    );
+}
+
+function boundedSafeError(value: string): string {
+  return safeError(value.trim()).slice(0, 1000);
+}
+
 function normalizedBaseUrl(value: string): string {
   const parsed = new URL(value);
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('chuanshen/config-invalid-api-url');
@@ -25,21 +42,30 @@ function errorMessage(body: JsonValue, status: number): string {
   if (body && typeof body === 'object' && !Array.isArray(body)) {
     const detail = body.detail;
     const message = body.message;
-    if (typeof detail === 'string' && detail.trim()) return detail.trim().slice(0, 1000);
+    if (typeof detail === 'string' && detail.trim()) return boundedSafeError(detail);
     if (detail && typeof detail === 'object' && !Array.isArray(detail)) {
       const detailMessage = detail.message;
-      if (typeof detailMessage === 'string' && detailMessage.trim()) {
-        return detailMessage.trim().slice(0, 1000);
+      const issue = detail.issue;
+      const trimmedDetailMessage = typeof detailMessage === 'string' ? detailMessage.trim() : '';
+      const structuredMessages: string[] = [];
+      if (trimmedDetailMessage) {
+        structuredMessages.push(trimmedDetailMessage);
+      }
+      if (typeof issue === 'string' && issue.trim() && issue.trim() !== trimmedDetailMessage) {
+        structuredMessages.push(issue.trim());
+      }
+      if (structuredMessages.length) {
+        return boundedSafeError(structuredMessages.join('：'));
       }
       const issues = detail.issues;
       if (Array.isArray(issues)) {
         const messages = issues
           .map(issue => issue && typeof issue === 'object' && !Array.isArray(issue) ? issue.message : null)
           .filter((message): message is string => typeof message === 'string' && Boolean(message.trim()));
-        if (messages.length) return messages.join('；').slice(0, 1000);
+        if (messages.length) return boundedSafeError(messages.join('；'));
       }
     }
-    if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 1000);
+    if (typeof message === 'string' && message.trim()) return boundedSafeError(message);
   }
   return `chuanshen/http-${status}`;
 }
@@ -94,7 +120,7 @@ export class ChuanshenClient {
       await this.#login(signal);
       return this.#fetch(path, init, signal, true, false);
     }
-    if (!response.ok) throw new Error(errorMessage(body, response.status));
+    if (!response.ok) throw new PlatformError(response.status, errorMessage(body, response.status));
     return body;
   }
 
@@ -108,6 +134,29 @@ export class ChuanshenClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(value),
     }, signal);
+  }
+
+  put(path: string, value: JsonValue, signal: AbortSignal): Promise<JsonValue> {
+    return this.#fetch(path, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(value)}, signal);
+  }
+
+  async downloadExport(jobId: string, signal: AbortSignal, retry = true): Promise<Response> {
+    if (!/^[a-zA-Z0-9_-]{1,100}$/.test(jobId)) throw new Error('chuanshen/invalid-id');
+    if (!this.#accessToken) await this.#login(signal);
+    const response = await fetch(`${this.options.apiBaseUrl}/writing/exports/${encodeURIComponent(jobId)}/download`, {
+      headers: {Authorization: `Bearer ${this.#accessToken}`},
+      signal: AbortSignal.any([signal, AbortSignal.timeout(this.options.timeoutMs)]),
+    });
+    if (response.status === 401 && retry) {
+      await response.body?.cancel(); this.#accessToken = undefined;
+      return this.downloadExport(jobId, signal, false);
+    }
+    if (!response.ok) throw new PlatformError(response.status, errorMessage(await response.json().catch(() => null) as JsonValue, response.status));
+    // Forward only download metadata. Never forward upstream cookies or tokens.
+    const headers = new Headers({'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'});
+    headers.set('Content-Type', response.headers.get('content-type') ?? 'application/octet-stream');
+    headers.set('Content-Disposition', response.headers.get('content-disposition') ?? `attachment; filename="report-${jobId}"`);
+    return new Response(response.body, {headers});
   }
 
   async postEventStream(
@@ -135,7 +184,7 @@ export class ChuanshenClient {
     }
     if (!response.ok) {
       const body = await response.json().catch(() => null) as JsonValue;
-      throw new Error(errorMessage(body, response.status));
+      throw new PlatformError(response.status, errorMessage(body, response.status));
     }
     if (!response.body) throw new Error('chuanshen/stream-missing-body');
     const reader = response.body.getReader();

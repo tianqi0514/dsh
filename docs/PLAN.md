@@ -1,3 +1,7 @@
+## 2026-09-20 当前授权：原生推演写作
+
+执行 [设计复核](design/CHUANSHEN_NATIVE_WRITING_REVIEW.md) 和 [ADR-0031](adr/0031-native-controlled-writing.md)：项目主笔组合、原生章节工作包与提交、独立 Plate、精确绑定、确认和版本保护。优先完成单主笔真实报告；不恢复旧专家团执行器或改动 Office。旧模块未完成验收保留。
+
 ## 2026-09-15：官方 Team 替换自有专家团（用户明确授权）
 
 用户要求直接废弃自有专家团执行实现。当前专项改为：移除 TeamRunsManager、SOP 运行状态机、workdsh_expert_team_* 工具和 workdsh-expert one-shot provider；以 0.1.6-alpha.1 官方 Agent Teams、九项工具及官方 Web 团队面板实现。角色/技能/WorkBuddy 导入和已发布专家内容保留为资产配置，协作场景作为工作指导，运行事实仅由官方 Session 日志和 Team 拥有。旧运行数据保留原地，不再续跑旧调度器；新任务使用官方 Team。公开查询缺陷单独实测和修复，不再作为保留旧执行器的理由。

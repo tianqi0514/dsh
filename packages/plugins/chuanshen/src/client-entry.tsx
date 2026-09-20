@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-workspace/client';
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client';
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client';
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client';
 import type {} from '@deepseek-ai/dsh-client-ui-slots';
 import type {} from '@deepseek-ai/dsh-api-session-controller/client';
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client';
@@ -20,7 +21,7 @@ declare module '@deepseek-ai/dsh-api-session-controller/client' {
 }
 
 export const name = 'workdsh-chuanshen-client';
-export const inject = ['slots', 'layout', 'connection', 'sessions', 'workspaces', 'conversation', 'uiWorkspace'];
+export const inject = ['slots', 'layout', 'connection', 'sessions', 'workspaces', 'conversation', 'uiWorkspace', 'sidebarRight'];
 
 export function apply(ctx: Context): void {
   const lifetime = new AbortController();
@@ -70,6 +71,7 @@ export function apply(ctx: Context): void {
     ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
       name: 'tool.call.toolview',
       key: tool.name,
+      inject: () => ({ openWritingResource: (address: string) => ctx.sidebarRight.openResource(address) }),
     }, ChuanshenToolRow));
   }
 }

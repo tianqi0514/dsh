@@ -1,5 +1,10 @@
 import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain';
 import { z } from 'zod';
+import {
+  DEFAULT_CONNECTOR_TOOL_CALL_TIMEOUT_MS,
+  MAX_CONNECTOR_TOOL_CALL_TIMEOUT_MS,
+  MIN_CONNECTOR_TOOL_CALL_TIMEOUT_MS,
+} from './shared.js';
 
 export const connectorDefinitionSchema = z.object({
   id: z.string().min(1).max(64),
@@ -13,6 +18,10 @@ export const connectorDefinitionSchema = z.object({
   authorizationCredentialRef: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).max(128).optional(),
   /** Header carrying the credential value. Defaults to Authorization; catalogs also use X-Api-Key styles. */
   credentialHeader: z.string().regex(/^[A-Za-z][A-Za-z0-9-]{0,63}$/).optional(),
+  toolCallTimeoutMs: z.number().int()
+    .min(MIN_CONNECTOR_TOOL_CALL_TIMEOUT_MS)
+    .max(MAX_CONNECTOR_TOOL_CALL_TIMEOUT_MS)
+    .default(DEFAULT_CONNECTOR_TOOL_CALL_TIMEOUT_MS),
   enabled: z.boolean(),
   createdAt: z.string().min(1),
   updatedAt: z.string().min(1),

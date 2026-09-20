@@ -6,7 +6,9 @@ export type WorkItemPriority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 export type ProjectCapabilityKind = 'skill' | 'expert' | 'connector';
 
 export interface ProjectCapabilityRef { readonly kind: ProjectCapabilityKind; readonly id: string; readonly revision?: string; readonly label: string; readonly scope?: 'personal' | 'public'; }
-export interface ProjectConfig { readonly instruction: string; readonly capabilities: readonly ProjectCapabilityRef[]; }
+export interface ProjectConfig { readonly instruction: string; readonly capabilities: readonly ProjectCapabilityRef[]; readonly workspaceId?: string; }
+export interface ProjectWorkspace { readonly id: string; readonly title: string; readonly path: string; }
+export interface ProjectTaskPlan { readonly configRevisionId: string; readonly workspace: ProjectWorkspace; readonly expert?: ProjectCapabilityRef; }
 export interface ProjectConfigRevision extends ProjectConfig { readonly id: string; readonly projectId: string; readonly number: number; readonly createdBy: string; readonly createdAt: string; }
 export interface Project { readonly id: string; readonly name: string; readonly description: string; readonly templateId?: string; readonly owner: ResourceOwner; readonly status: ProjectStatus; readonly configRevisionId: string; readonly createdAt: string; readonly updatedAt: string; }
 export interface ProjectTemplate { readonly id: string; readonly name: string; readonly description: string; readonly instruction: string; }
@@ -34,7 +36,7 @@ export interface ProjectService {
   addAsset(actor: ActorContext, projectId: string, asset: Omit<ProjectAssetRef, 'id'|'projectId'|'createdAt'>, signal?: AbortSignal): Promise<ProjectAssetRef>;
   removeAsset(actor: ActorContext, projectId: string, refId: string, signal?: AbortSignal): Promise<void>;
   validateInputRefs(actor: ActorContext, projectId: string, references: readonly ProjectInputRef[], signal?: AbortSignal): Promise<readonly ProjectInputRef[]>;
-  linkTask(actor: ActorContext, projectId: string, sessionId: string, title: string, workItemId?: string, references?: readonly ProjectInputRef[], signal?: AbortSignal): Promise<ProjectTaskLink>;
+  linkTask(actor: ActorContext, projectId: string, sessionId: string, title: string, workItemId?: string, references?: readonly ProjectInputRef[], signal?: AbortSignal, expectedConfigRevisionId?: string): Promise<ProjectTaskLink>;
   taskContext(actor: ActorContext, sessionId: string, signal?: AbortSignal): Promise<ProjectTaskContext | undefined>;
   noteDeliveryGap(actor: ActorContext, projectId: string, text: string, signal?: AbortSignal): Promise<void>;
 }

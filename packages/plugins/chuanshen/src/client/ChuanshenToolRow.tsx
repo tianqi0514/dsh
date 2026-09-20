@@ -24,7 +24,8 @@ function compactInput(raw: string): string {
   return '';
 }
 
-export function ChuanshenToolRow({ toolName, block, inspect }: ToolCallViewProps) {
+export function ChuanshenToolRow({ toolName, block, inspect, openWritingResource }: ToolCallViewProps & {openWritingResource: (address: string) => void | Promise<unknown>}) {
+  const [openError, setOpenError] = React.useState('');
   const presentation = (CHUANSHEN_TOOL_BY_NAME as ReadonlyMap<string, (typeof CHUANSHEN_TOOL_PRESENTATIONS)[number]>).get(toolName);
   const group = CHUANSHEN_CAPABILITY_GROUPS.find(item => item.id === presentation?.group);
   const settled = 'kind' in block;
@@ -32,6 +33,8 @@ export function ChuanshenToolRow({ toolName, block, inspect }: ToolCallViewProps
   const state = failed ? 'error' : settled ? 'ok' : 'running';
   const input = argsRaw(block);
   const output = resultText(block);
+  const address = !failed && settled && toolName === 'chuanshen_writing_open'
+    ? output.match(/dsh-resource:\/\/chuanshen-writing\/[A-Za-z0-9_-]{1,100}(?=[\s)"'\\]|$)/)?.[0] : undefined;
   const compact = compactInput(input);
   return <div className={`wd-cs-tool ${state}`} data-testid={`chuanshen-tool-${toolName}`}>
     <style>{chuanshenPanelCss}</style>
@@ -42,6 +45,8 @@ export function ChuanshenToolRow({ toolName, block, inspect }: ToolCallViewProps
       <span className="wd-cs-tool-summary">{compact || presentation?.summary || ''}</span>
       <span className="wd-cs-tool-state">{failed ? '失败' : settled ? '完成' : '执行中'}</span>
     </div>
+    {address && <button type="button" onClick={() => { setOpenError(''); Promise.resolve().then(() => openWritingResource(address)).catch(() => setOpenError('请先展开右侧栏，再打开 Plate 写作。')); }}>在 Plate 打开文稿</button>}
+    {openError && <div role="alert">{openError}</div>}
     {(input || output) && <details>
       <summary onDoubleClick={() => inspect?.()}>查看输入与结果</summary>
       <pre>{[input ? `输入\n${input}` : '', output ? `结果\n${output}` : ''].filter(Boolean).join('\n\n')}</pre>

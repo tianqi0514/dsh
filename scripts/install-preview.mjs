@@ -26,9 +26,9 @@ const run = async (tool, args) => {
 await mkdir(home, { recursive: true }); await mkdir(artifacts, { recursive: true });
 const tarballs = [];
 const packages = [];
-for (const directory of ['packages/providers/identity-local', 'packages/plugins/audit', 'packages/plugins/access', 'packages/plugins/skills', 'packages/plugins/experts', 'packages/plugins/connectors', 'packages/plugins/office', 'packages/plugins/library', 'packages/plugins/projects', 'packages/plugins/chuanshen', 'packages/plugins/activity', 'packages/bundle']) {
+for (const directory of ['packages/providers/identity-local', 'packages/plugins/audit', 'packages/plugins/access', 'packages/plugins/skills', 'packages/plugins/experts', 'packages/plugins/connectors', 'packages/plugins/office', 'packages/plugins/library', 'packages/plugins/projects', 'packages/plugins/chuanshen', 'packages/plugins/plate', 'packages/plugins/activity', 'packages/bundle']) {
   const manifest = JSON.parse(await readFile(join(root, directory, 'package.json'), 'utf8'));
-  await access(join(root, directory, manifest.exports['.'].default));
+  await access(join(root, directory, (manifest.exports['.'] ?? manifest.exports['./client']).default));
   await run('pnpm/bin/pnpm.cjs', ['--filter', manifest.name, 'pack', '--pack-destination', artifacts]);
   const packed = join(artifacts, `${manifest.name}-${manifest.version}.tgz`);
   // Preview candidates can change before their next release. A stable file:
@@ -78,5 +78,5 @@ for (const { directory, manifest } of packages) {
     if (!expected.equals(installed)) throw new Error(`Installed ${manifest.name} ${face} differs from the current build; refusing to report a successful preview update.`);
   }
 }
-console.log('Installed Skill, Expert, Connector, Office, Library, Projects, Chuanshen and WorkDSH presentation as separate official Profile layers.');
+console.log('Installed Skill, Expert, Connector, Office, Plate, Library, Projects, Chuanshen and WorkDSH presentation as separate official Profile layers.');
 console.log('Start the stopped preview with: corepack pnpm preview');

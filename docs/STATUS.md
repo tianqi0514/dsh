@@ -1453,6 +1453,7 @@ D00 设计修订完成，当前 D01 集成验证进行中。已安装并锁定�
 | P0-04 | 契约与兼容门槛 | P0 | completed |
 | P0-05 | 团队身份与全路径隔离探针 | P0 | completed |
 | P1-01 | 契约与工作台 | P1 | completed |
+| user-native-writing | 用户授权：项目、MCP、Skills、主笔专家与独立 Plate 写作闭环 | 业务切片 | in_progress |
 | P1-02 | 专家管理及 expert-manager | P1 | todo |
 | P1-03 | 技能管理及 skill-creator | P1 | completed |
 | P1-04 | 连接器管理 | P1 | todo |
@@ -1921,3 +1922,9 @@ Office build/typecheck 以及 content/download/rich-editor 30 项相关测试通
 服务器使用 Node 22.19.0 和 pnpm 10.34.5 完成依赖安装与全量 build；预览 Profile 已安装 DSH `0.1.6-alpha.2`、`workdsh-bundle@0.1.0-alpha.47`、Projects `alpha.2` 和传神插件 `alpha.1`。安装阶段曾因 root 安装产物权限导致服务无法读取 Profile，修正 Profile 所有权后重新启动成功；最终 `workdsh-preview.service` 为 active，认证入口返回 200，未认证入口按预期返回 401。
 
 真实浏览器验证：历史会话“科研楼可研事实联动验收演示”仍可打开，模型仍为 `deepseek-v4-flash-0731`；上游新增 Projects 面板可打开并显示项目创建、状态筛选、搜索和模板入口；新会话文件入口存在。服务重启会刷新一次性访问令牌，令牌不写入本仓库或本记录。
+
+## 2026-09-20：原生 DSH 推演写作设计复核（仅审核）
+
+基于 DSH `1dabd49`、智库 `41fe9aae` 与锁定 `0.1.6-alpha.2` 官方镜像审核项目、技能、专家、MCP、章节写作、Plate 和联动。发现项目选中 Skill 不代表已加载、项目启动未走专家组合、MCP 子专家范围待验证、当前写作存在外层 DSH 调内层平台 Agent、普通正文保存缺少预期版本、块内数字仍靠唯一出现定位，以及模型传 `user_confirmed` 不能单独证明真实用户确认。新增 [设计复核与真实写作验收](design/CHUANSHEN_NATIVE_WRITING_REVIEW.md)，收敛为原生项目/Session、独立 Plate、单一正文版本权威、位置级绑定与受信选择提交；Office 保持独立。
+
+已定位科研楼六份本地业务测试材料。旧 `verify_live.py` 的预置 Fact/正文块只计接口回归，不替代上传、完整报告、原生专家和 Skill、MCP、Plate 编辑、事实变更与导出的新闭环。本轮仅源码/文档审核和材料路径核对，未执行模型、业务写入、浏览器测试、构建、部署、提交或推送。下一步先补运行组合和章节工作包契约及 Plate 最小探针，再按文档跑完整可研写作，以逐章内容质量和变更前后证据验收；现有用户修改未触碰。

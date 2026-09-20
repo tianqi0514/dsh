@@ -41,13 +41,35 @@ function addConsumer(list: readonly SkillConsumerRef[], consumer: SkillConsumerR
 
 /** Frozen-content fingerprint over SKILL.md + resources, plus per-file manifest stats. */
 async function snapshotFiles(directory: string, signal?: AbortSignal): Promise<{ files: { path: string; byteLength: number; sha256: string }[]; contentDigest: string }> {
-  const resources = await resourceFiles(directory);
-  const paths = ['SKILL.md', ...resources].sort();
+  const root = await realpath(directory);
+  const paths: string[] = [];
+  let totalBytes = 0;
+  // A retained revision must be complete. UI pagination limits must never
+  // silently omit a resource from its fingerprint or immutable snapshot.
+  const visit = async (current: string, depth: number): Promise<void> => {
+    signal?.throwIfAborted();
+    if (depth > 6) throw new Error('skill/revision-bundle-too-deep');
+    for (const row of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, row.name);
+      if (row.isSymbolicLink()) throw new Error('skill/path-symlink');
+      if (row.isDirectory()) await visit(path, depth + 1);
+      else if (row.isFile()) {
+        totalBytes += (await stat(path)).size;
+        paths.push(relative(root, path));
+        if (paths.length > 400 || totalBytes > 50 * 1024 * 1024) throw new Error('skill/revision-bundle-too-large');
+      } else throw new Error('skill/revision-resource-invalid');
+    }
+  };
+  await visit(root, 0);
+  if (!paths.includes('SKILL.md')) throw new Error('skill/revision-source-missing');
+  paths.sort();
   const hash = createHash('sha256');
   const files: { path: string; byteLength: number; sha256: string }[] = [];
   for (const path of paths) {
     signal?.throwIfAborted();
-    const bytes = await readFile(join(directory, path));
+    const target = join(root, path);
+    if ((await lstat(target)).isSymbolicLink() || !inside(root, await realpath(target))) throw new Error('skill/path-symlink');
+    const bytes = await readFile(target);
     files.push({ path, byteLength: bytes.byteLength, sha256: createHash('sha256').update(bytes).digest('hex') });
     hash.update(path); hash.update('\0'); hash.update(bytes); hash.update('\0');
   }
@@ -606,16 +628,38 @@ export class SkillManager extends Service implements SkillManagementService {
   private async fromDefinition(definition: SkillDefinition): Promise<ManagedSkillDetail | undefined> {
     const readonlyDetail: ManagedSkillDetail = {
       name: definition.name, description: definition.description, whenToUse: definition.whenToUse,
-      modelInvocable: definition.invocation.modelInvocable, state: 'readonly', manageable: false, resources: [],
+      modelInvocable: definition.invocation.modelInvocable, state: 'readonly', manageable: false, resources: [], document: definition.content,
     };
-    if (!definition.path) return readonlyDetail;
+    const readonlyBundle = async (): Promise<ManagedSkillDetail> => {
+      if (definition.resourceBase?.kind !== 'directory') return readonlyDetail;
+      // Flat-file providers stay readable, but their parent directory is not a
+      // bundle: do not retain unrelated sibling skills/resources as one skill.
+      if (definition.path && basename(definition.path) !== 'SKILL.md') return readonlyDetail;
+      // Only the winning official definition supplies this root. Callers can
+      // select a skill name, never an arbitrary Host directory or instruction.
+      const directory = await realpath(definition.resourceBase.path);
+      const entry = join(directory, 'SKILL.md');
+      try {
+        if ((await lstat(entry)).isSymbolicLink()) throw new Error('skill/path-symlink');
+        if (definition.path && await realpath(definition.path) !== entry) throw new Error('skill/revision-source-mismatch');
+        const snapshot = await snapshotFiles(directory);
+        const document = await readFile(entry, 'utf8');
+        if (Buffer.byteLength(document) > maximumDocumentBytes) throw new Error('skill/document-too-large');
+        return { ...readonlyDetail, document, directoryPath: directory, revision: snapshot.contentDigest,
+          resources: snapshot.files.map(file => file.path).filter(path => path !== 'SKILL.md') };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return readonlyDetail;
+        throw error;
+      }
+    };
+    if (!definition.path) return readonlyBundle();
     const active = await this.activeEntry(definition.name);
-    if (!active) return readonlyDetail;
+    if (!active) return readonlyBundle();
     // Harness exposes a canonical instruction path; configured roots may use
     // an OS alias (e.g. /var -> /private/var). Compare actual files only after
     // activeEntry has enforced the managed-root and symlink checks. A winning
     // external skill with the same name must never select the managed copy.
-    if (await realpath(definition.path) !== await realpath(active.file)) return readonlyDetail;
+    if (await realpath(definition.path) !== await realpath(active.file)) return readonlyBundle();
     const document = await readFile(active.file, 'utf8');
     const directory = dirname(active.file);
     return {
@@ -676,9 +720,16 @@ export class SkillManager extends Service implements SkillManagementService {
       throw new Error('skill/invalid-resource-path');
     }
     const current = await this.detail(name);
-    if (!current?.directoryPath || current.state === 'readonly') throw new Error('skill/not-manageable');
+    if (!current?.directoryPath || (current.state === 'readonly' && allowMissing)) throw new Error('skill/not-manageable');
     const target = resolve(current.directoryPath, resourcePath);
     if (!inside(current.directoryPath, target)) throw new Error('skill/invalid-resource-path');
+    if (current.state === 'readonly') {
+      if (!current.resources.includes(resourcePath)) throw new Error('skill/invalid-resource-path');
+      await this.assertResourceParent(name, dirname(target));
+      const info = await lstat(target);
+      if (info.isSymbolicLink() || !info.isFile() || !inside(await realpath(current.directoryPath), await realpath(target))) throw new Error('skill/path-symlink');
+      return target;
+    }
     await this.assertResourceParent(name, dirname(target));
     try {
       const info = await lstat(target);
@@ -817,6 +868,7 @@ export class SkillManager extends Service implements SkillManagementService {
         await mkdir(dirname(to), { recursive: true });
         await copyFile(join(detail.directoryPath, file.path), to);
       }
+      if ((await snapshotFiles(target, signal)).contentDigest !== ref.contentDigest) throw new Error('skill/revision-drift');
       const retainedBy = addConsumer(existing?.retainedBy ?? [], consumer);
       const manifest: RetentionManifest = { ref, contentDigest: ref.contentDigest, files: source.files, retainedBy, createdAt: new Date().toISOString() };
       await this.writeJson(manifestPath, manifest);

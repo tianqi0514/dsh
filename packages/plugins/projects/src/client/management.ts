@@ -10,6 +10,8 @@ import type {
   ProjectTaskLink,
   ProjectTemplate,
   ProjectWorkItem,
+  ProjectWorkspace,
+  ProjectTaskPlan,
 } from 'workdsh-contracts/projects';
 
 const path = '/api/workdsh-projects';
@@ -19,8 +21,8 @@ const path = '/api/workdsh-projects';
  * unavailable service into a false success and create projects that disappear
  * on another device, so every operation goes through the authoritative route.
  */
-async function invoke<T>(endpoint: string, payload: unknown, signal?: AbortSignal): Promise<T> {
-  const timeout = AbortSignal.timeout(5_000);
+async function invoke<T>(endpoint: string, payload: unknown, signal?: AbortSignal, timeoutMs=5_000): Promise<T> {
+  const timeout = AbortSignal.timeout(timeoutMs);
   const response = await fetch(path, {
     method: 'POST',
     credentials: 'same-origin',
@@ -42,6 +44,9 @@ async function invoke<T>(endpoint: string, payload: unknown, signal?: AbortSigna
 export function createProjectClient(lifetime?: AbortSignal) {
   return {
     templates: () => invoke<readonly ProjectTemplate[]>('templates', {}, lifetime),
+    workspaces: () => invoke<readonly ProjectWorkspace[]>('workspaces', {}, lifetime),
+    prepareTask: (projectId: string, configRevisionId: string, expertId?: string) => invoke<ProjectTaskPlan>('prepare-task', { projectId, configRevisionId, expertId }, lifetime),
+    createExpertTask: (projectId: string, configRevisionId: string, expertId: string, operationId: string) => invoke<{sessionId:string}>('create-expert-task', { projectId, configRevisionId, expertId, operationId }, lifetime, 60_000),
     list: (query = '', status: ProjectStatus = 'active') => invoke<readonly Project[]>('list', { query, status }, lifetime),
     create: (name: string, description = '', templateId?: string) => invoke<ProjectSnapshot>('create', { name, description, templateId }, lifetime),
     get: (projectId: string) => invoke<ProjectSnapshot>('get', { projectId }, lifetime),
@@ -54,7 +59,7 @@ export function createProjectClient(lifetime?: AbortSignal) {
     addAsset: (projectId: string, asset: Omit<ProjectAssetRef, 'id'|'projectId'|'createdAt'>) => invoke<ProjectAssetRef>('add-asset', { projectId, asset }, lifetime),
     removeAsset: (projectId: string, refId: string) => invoke<void>('remove-asset', { projectId, refId }, lifetime),
     validateInputRefs: (projectId: string, references: readonly ProjectInputRef[]) => invoke<readonly ProjectInputRef[]>('validate-input-refs', { projectId, references }, lifetime),
-    linkTask: (projectId: string, sessionId: string, title: string, workItemId?: string, references: readonly ProjectInputRef[] = []) => invoke<ProjectTaskLink>('link-task', { projectId, sessionId, title, workItemId, references }, lifetime),
+    linkTask: (projectId: string, sessionId: string, title: string, workItemId?: string, references: readonly ProjectInputRef[] = [], configRevisionId?: string) => invoke<ProjectTaskLink>('link-task', { projectId, sessionId, title, workItemId, references, configRevisionId }, lifetime),
   };
 }
 

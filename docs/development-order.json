@@ -1,5 +1,12 @@
 {
   "currentStep": "D04",
+  "userAuthorizedWritingSlice": {
+    "id": "native-controlled-writing",
+    "status": "in_progress",
+    "decision": "docs/adr/0031-native-controlled-writing.md",
+    "evidence": ["docs/design/CHUANSHEN_NATIVE_WRITING_REVIEW.md"],
+    "scope": "用户明确优先：原生项目主笔、章节工作包、独立Plate、精确绑定和用户预览；真实科研楼报告验收。原主线状态不改变。"
+  },
   "steps": [
     {
       "id": "D00",

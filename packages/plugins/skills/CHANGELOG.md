@@ -1,5 +1,6 @@
 ## 0.1.0-alpha.30 — Unreleased（2026-09-18）
 
+- 官方随包技能继续以只读来源显示；通过 `SkillDefinition.resourceBase/path` 读取原包正文和资源，允许专家固定完整内容修订，不复制一份可编辑技能。保留资源快照改为完整遍历、超限拒绝，拒绝符号链接和来源越界，并在复制后核对摘要。
 - 适配 DeepSeek Harness 0.1.6-alpha.2：当前会话改由 `SessionSummary.retainedBy.mainView` 推导；打开技能会话改用官方 `uiWorkspace.openSession` 导航。
 
 ## 0.1.0-alpha.29 — 2026-09-15

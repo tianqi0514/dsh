@@ -33,3 +33,17 @@ test('project workspace uses a responsive configuration drawer without collabora
     await browser.close();
   }
 });
+
+test('execution location and main author controls fit the writing task input area',async()=>{
+  const browser=await chromium.launch({headless:true});
+  try{
+    const page=await browser.newPage();
+    for(const viewport of [{width:1280,height:720},{width:1440,height:900}]){
+      await page.setViewportSize(viewport);
+      await page.setContent(`<style>html,body{height:100%;margin:0}${css}</style><section class="wd-projects"><div class="wd-p-shell"><header class="wd-p-top">项目</header><main class="wd-p-main"><nav class="wd-p-tabs">任务</nav><div class="wd-p-content">项目资料</div><div class="wd-p-task-composition"><label>执行位置<select aria-label="项目执行工作空间"><option>科研楼项目工作目录</option></select></label><label>本次主笔<select aria-label="本次主笔"><option>科研建设可研主笔</option></select></label><small>推荐技能按需加载，实际使用见任务记录。</small></div><div class="wd-p-composer"><textarea>根据项目资料起草可研讨论稿</textarea><footer><button>创建任务</button></footer></div></main><aside class="wd-p-aside">项目配置</aside></div></section>`);
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+      const bounds=await page.locator('.wd-p-composer').boundingBox();assert.ok(bounds&&bounds.y+bounds.height<=viewport.height);
+      assert.equal(await page.getByLabel('本次主笔').inputValue(),'科研建设可研主笔');
+    }
+  }finally{await browser.close();}
+});

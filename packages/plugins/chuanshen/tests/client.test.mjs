@@ -50,6 +50,23 @@ async function fixture() {
       ] } }));
       return;
     }
+    if (req.url === '/api/v1/chapter-quality-failure') {
+      res.statusCode = 422;
+      res.end(JSON.stringify({ detail: {
+        message: '章节未通过确定性校验',
+        issue: '正文块 sum-p2 中的数值 18000 没有匹配当前事实',
+      } }));
+      return;
+    }
+    if (req.url === '/api/v1/sensitive-long-failure') {
+      res.statusCode = 422;
+      res.end(JSON.stringify({ detail: {
+        message: '提交失败',
+        issue: `正文块包含 token=private-token-value、password:private-password-value、secret="private secret with spaces"、Bearer private-bearer-value、sk-private-api-key ${'甲'.repeat(1200)}`,
+        ignored_internal_body: { database_password: 'must-not-be-exposed' },
+      } }));
+      return;
+    }
     if (req.url === '/api/v1/stream') {
       res.setHeader('Content-Type', 'text/event-stream');
       res.end('event: tool_started\ndata: {}\n\nevent: turn_completed\ndata: {}\n\n');
@@ -113,6 +130,45 @@ test('preserves safe quality-gate issue messages', async t => {
   await assert.rejects(
     value.client.get('/quality-failure', new AbortController().signal),
     /章节“二、基本情况”尚未生成；章节缺少可核验引用/,
+  );
+});
+
+test('preserves a safe singular quality-gate issue with its business message', async t => {
+  const value = await fixture();
+  t.after(() => value.server.close());
+  await assert.rejects(
+    value.client.get('/chapter-quality-failure', new AbortController().signal),
+    error => {
+      assert.equal(error.name, 'PlatformError');
+      assert.equal(error.status, 422);
+      assert.equal(error.message, '章节未通过确定性校验：正文块 sum-p2 中的数值 18000 没有匹配当前事实');
+      return true;
+    },
+  );
+});
+
+test('redacts and bounds a singular issue without serializing arbitrary detail fields', async t => {
+  const value = await fixture();
+  t.after(() => value.server.close());
+  await assert.rejects(
+    value.client.get('/sensitive-long-failure', new AbortController().signal),
+    error => {
+      assert.equal(error.name, 'PlatformError');
+      assert.equal(error.status, 422);
+      assert.ok(error.message.startsWith('提交失败：正文块包含'));
+      assert.ok(error.message.includes('token=[redacted]'));
+      assert.ok(error.message.includes('password=[redacted]'));
+      assert.ok(error.message.includes('Bearer [redacted]'));
+      assert.ok(error.message.includes('[redacted]'));
+      assert.equal(error.message.includes('private-token-value'), false);
+      assert.equal(error.message.includes('private-password-value'), false);
+      assert.equal(error.message.includes('private secret with spaces'), false);
+      assert.equal(error.message.includes('private-bearer-value'), false);
+      assert.equal(error.message.includes('private-api-key'), false);
+      assert.equal(error.message.includes('must-not-be-exposed'), false);
+      assert.equal(error.message.length, 1000);
+      return true;
+    },
   );
 });
 

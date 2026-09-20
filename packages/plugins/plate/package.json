@@ -1,0 +1,78 @@
+{
+  "name": "workdsh-plugin-plate",
+  "version": "0.1.0-alpha.1",
+  "type": "module",
+  "description": "Independent Plate writing surface using Chuanshen versioned documents",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./client": {
+      "types": "./dist/client.d.ts",
+      "default": "./dist/client.browser.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node ../../../scripts/build-plate.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-resources": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.1.6-alpha.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.2"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-resources": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-client-ui-sidebar-right": "0.1.6-alpha.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@types/node": "22.19.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "typescript": "5.9.3",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.6-alpha.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.6-alpha.2"
+  },
+  "dependencies": {
+    "platejs": "53.3.11",
+    "@platejs/basic-nodes": "53.0.0",
+    "@platejs/basic-styles": "53.0.0",
+    "@platejs/list": "53.1.3",
+    "@platejs/indent": "53.0.0",
+    "@platejs/table": "53.0.9",
+    "@platejs/link": "53.3.5",
+    "@platejs/media": "53.1.4",
+    "@platejs/slash-command": "53.0.0",
+    "@platejs/comment": "53.0.0",
+    "@platejs/suggestion": "53.2.3",
+    "@platejs/combobox": "53.0.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-resources",
+        "@deepseek-ai/dsh-client-ui-sidebar-right"
+      ]
+    }
+  }
+}

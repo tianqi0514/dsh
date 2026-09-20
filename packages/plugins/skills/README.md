@@ -88,6 +88,15 @@ export function apply(ctx: Context) {
 
 五个内置技能位于 `resources/skills/<name>/SKILL.md`，正文不在 TypeScript 独立维护。执行 build/typecheck 前由 `scripts/generate-builtin-skills.mjs` 使用官方 Harness provider 解析并生成注册内容；references 随本包交付。用户创建技能仍由管理服务保存到官方用户根。内置在管理页保持只读，工程修改后随插件更新。唯一内置 PPT 制作技能采用已合并的设计方法，不包含腾讯专属引擎或原版脚本。目录及来源规则见[架构](../../../docs/ARCHITECTURE.md)。
 
+### 随包技能的只读修订
+
+`native-controlled-writing` 的前置修复复用官方 `@deepseek-ai/dsh-skill@0.1.6-alpha.2` 的 `ctx.skills.list/get`、`SkillDefinition.path/resourceBase`；语义依据见[官方技能公开契约](../../../docs/dsh-v0.1.6-alpha.2/subsystems/skills.zh.md)。发现、解析、运行仍由官方 provider 拥有。本模块只读取已注册技能的原包正文、资源和内容摘要，并经现有 `resolveRevision/retainRevision` 公共接口为专家保留不可变修订；没有第二套可编辑技能或发现器。
+
+- 非受管包保持 `readonly`，禁止管理页更新、停用、卸载或写资源；允许查看正文和读取已登记资源。
+- 目录包摘要覆盖 `SKILL.md` 和所有资源。超过 400 文件、50 MiB 或 6 层时明确拒绝；不按 UI 列表上限静默截断。符号链接、声明的指令路径不属于资源目录、越界资源均拒绝。复制修订后再次核对摘要。
+- 没有目录包的虚拟或扁平技能仍可阅读，但不伪造可保留修订；返回 `skill/revision-source-missing`。
+- 验证：`node --test tests/integration/skill-bundled-revisions.test.mjs tests/integration/skill-manager.test.mjs`。使用真实官方 registry/provider 和 Chuanshen 随包资源，覆盖只读选择、资源完整摘要、保留历史、源卸载、越界与禁止写入。真实服务器的页面选择和主笔运行由本轮部署回归另行记录，不以此测试冒充。
+
 ### 完整技能制作
 
 内置 workdsh-skill-creator 接入用户提供的 WorkBuddy 完整创建方法及初始化、校验、ZIP 打包脚本（Apache-2.0，来源及修改见 resources/skills/workdsh-skill-creator/NOTICE.md）。带 references/scripts/assets 的技能在工作区草稿目录制作，导出 ZIP 后经现有导入预检和确认安装；单文件技能仍使用原草稿工具。需要 Python3 与实际执行工具；基础脚本校验不替代 Harness 解析或真实任务试用。

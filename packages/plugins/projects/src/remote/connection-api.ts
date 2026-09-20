@@ -2,7 +2,10 @@ import { randomUUID } from 'node:crypto';
 import type { Context } from '@deepseek-ai/cordis';
 import type { ConnectionRpcResult, HostConnectionHandle } from '@deepseek-ai/dsh-client-connection';
 import type { ActorContext, IdentityService } from 'workdsh-contracts';
+import type { ExpertsService } from 'workdsh-contracts/experts';
+import type {} from '@deepseek-ai/dsh-workspace';
 import type { ProjectAssetRef, ProjectConfig, ProjectInputRef, ProjectWorkItem } from 'workdsh-contracts/projects';
+import { prepareProjectTask, createProjectExpertSession } from '../runtime/task-composition.js';
 declare module '@deepseek-ai/cordis' { interface Context { workdshIdentity: IdentityService; } }
 export const projectManagementPath='/api/workdsh-projects';
 const ok=<T>(value:T):ConnectionRpcResult<T>=>({ok:true,value}); const fail=(code:string,message:string):ConnectionRpcResult<never>=>({ok:false,error:{code,message,details:{}}});
@@ -10,6 +13,14 @@ const record=(v:unknown):Record<string,unknown>|undefined=>v!==null&&typeof v===
 const actor=(ctx:Context):ActorContext=>{const p=ctx.workdshIdentity.profile();return{principalId:p.principalId,organizationId:p.organization.id,requestId:`projects-ui-${randomUUID()}`,resolvedBy:p.resolvedBy};};
 export function registerProjectConnection(ctx:Context){const connection=(ctx as Context&{connection:HostConnectionHandle}).connection;const unregister=connection.fetch.register({path:projectManagementPath,methods:['POST'],requestBody:'buffered',fetch:async request=>{try{const body=record(await request.json()),endpoint=body?.endpoint,p=record(body?.payload)??{},a=actor(ctx),m=ctx.workdshProjects;
 if(endpoint==='templates')return Response.json(ok(await m.templates()));
+if(endpoint==='workspaces'){const registry=ctx.get('workspaceRegistry');if(!registry)throw new Error('projects/workspace-unavailable');return Response.json(ok(registry.list().map(row=>({id:String(row.id),title:row.title,path:row.path}))));}
+if((endpoint==='prepare-task'||endpoint==='create-expert-task')&&typeof p.projectId==='string'&&typeof p.configRevisionId==='string'){
+const registry=ctx.get('workspaceRegistry');if(!registry)throw new Error('projects/workspace-unavailable');
+const plan=await prepareProjectTask(m,a,p.projectId,p.configRevisionId,registry.list().map(row=>({id:String(row.id),title:row.title,path:row.path})),typeof p.expertId==='string'?p.expertId:undefined,request.signal);
+if(endpoint==='prepare-task')return Response.json(ok(plan));
+const experts=ctx.get('workdshExperts' as never) as ExpertsService|undefined;if(!experts)throw new Error('projects/expert-unavailable');
+if(typeof p.operationId!=='string'||!/^project-task-[a-zA-Z0-9-]{10,100}$/.test(p.operationId))throw new Error('projects/invalid-operation');
+return Response.json(ok({sessionId:await createProjectExpertSession(experts,a,plan,p.operationId,request.signal)}));}
 if(endpoint==='list')return Response.json(ok(p.status==='archived'?await m.listArchived(a,typeof p.query==='string'?p.query:'',request.signal):await m.list(a,typeof p.query==='string'?p.query:'',request.signal)));
 if(endpoint==='create'&&typeof p.name==='string')return Response.json(ok(await m.create(a,{name:p.name,...(typeof p.description==='string'?{description:p.description}:{}),...(typeof p.templateId==='string'?{templateId:p.templateId}:{})},request.signal)));
 if(endpoint==='get'&&typeof p.projectId==='string')return Response.json(ok(await m.get(a,p.projectId,request.signal)));
@@ -21,6 +32,6 @@ if(endpoint==='update-work-item'&&typeof p.projectId==='string'&&record(p.item)&
 if(endpoint==='add-asset'&&typeof p.projectId==='string'&&record(p.asset))return Response.json(ok(await m.addAsset(a,p.projectId,p.asset as unknown as Omit<ProjectAssetRef,'id'|'projectId'|'createdAt'>,request.signal)));
 if(endpoint==='remove-asset'&&typeof p.projectId==='string'&&typeof p.refId==='string'){await m.removeAsset(a,p.projectId,p.refId,request.signal);return Response.json(ok({removed:true}));}
 if(endpoint==='validate-input-refs'&&typeof p.projectId==='string'&&Array.isArray(p.references))return Response.json(ok(await m.validateInputRefs(a,p.projectId,p.references as unknown as ProjectInputRef[],request.signal)));
-if(endpoint==='link-task'&&typeof p.projectId==='string'&&typeof p.sessionId==='string'&&typeof p.title==='string')return Response.json(ok(await m.linkTask(a,p.projectId,p.sessionId,p.title,typeof p.workItemId==='string'?p.workItemId:undefined,Array.isArray(p.references)?p.references as unknown as ProjectInputRef[]:[],request.signal)));
+if(endpoint==='link-task'&&typeof p.projectId==='string'&&typeof p.sessionId==='string'&&typeof p.title==='string')return Response.json(ok(await m.linkTask(a,p.projectId,p.sessionId,p.title,typeof p.workItemId==='string'?p.workItemId:undefined,Array.isArray(p.references)?p.references as unknown as ProjectInputRef[]:[],request.signal,typeof p.configRevisionId==='string'?p.configRevisionId:undefined)));
 if(endpoint==='task-context'&&typeof p.sessionId==='string')return Response.json(ok((await m.taskContext(a,p.sessionId,request.signal))??null));
-return Response.json(fail('projects/invalid-request','项目请求无效。'),{status:400});}catch(cause){const code=cause instanceof Error&&cause.message.startsWith('projects/')?cause.message:'projects/internal';const messages:Record<string,string>={'projects/not-found':'项目内容不存在或无权访问。','projects/revision-conflict':'内容已被更新，请刷新后重试；当前草稿已保留。','projects/instruction-budget-exceeded':'项目指令超过预留上下文预算，请删减重复背景或改为项目资料后重试。','projects/reference-stale':'引用已删除、更新或无权访问，请重新选择。','projects/invalid-name':'请输入有效的项目名称。','projects/invalid-title':'请输入有效标题。','projects/template-not-found':'项目模板不存在。'};return Response.json(fail(code,messages[code]??'项目操作失败。'),{status:code==='projects/internal'?500:400});}}});ctx.effect(()=>unregister,'workdsh.projects.fetch');}
+return Response.json(fail('projects/invalid-request','项目请求无效。'),{status:400});}catch(cause){const code=cause instanceof Error&&cause.message.startsWith('projects/')?cause.message:'projects/internal';const messages:Record<string,string>={'projects/workspace-required':'请在项目输入区选择有效的执行工作空间。','projects/workspace-unavailable':'工作空间服务未就绪，请稍后重试。','projects/expert-unavailable':'主笔专家未发布、已停用或缺少依赖，请检查项目专家配置。','projects/expert-revision-changed':'专家运行修订已升级，请在项目配置中明确更新专家后重试。','projects/session-already-linked':'该任务已属于其他项目。','projects/not-found':'项目内容不存在或无权访问。','projects/revision-conflict':'内容已被更新，请刷新后重试；当前草稿已保留。','projects/instruction-budget-exceeded':'项目指令超过预留上下文预算，请删减重复背景或改为项目资料后重试。','projects/reference-stale':'引用已删除、更新或无权访问，请重新选择。','projects/invalid-name':'请输入有效的项目名称。','projects/invalid-title':'请输入有效标题。','projects/template-not-found':'项目模板不存在。'};return Response.json(fail(code,messages[code]??'项目操作失败。'),{status:code==='projects/internal'?500:400});}}});ctx.effect(()=>unregister,'workdsh.projects.fetch');}
