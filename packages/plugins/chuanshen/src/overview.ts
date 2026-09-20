@@ -79,13 +79,18 @@ function number(value: JsonValue | undefined): number {
 function graphLayer(root: JsonRecord, id: string, label: string) {
   const counts = record(root.counts ?? root.summary);
   const raw = record(root[id] ?? counts[id]);
-  const total = number(raw.total ?? raw.count ?? root[`${id}_count`] ?? counts[`${id}_count`] ?? counts[id]);
+  const verified = number(raw.verified ?? raw.confirmed);
+  const pending = number(raw.candidate ?? raw.pending ?? raw.unverified);
+  const reportedTotal = number(raw.total ?? raw.count ?? root[`${id}_count`] ?? counts[`${id}_count`] ?? counts[id]);
+  // Older governance summaries expose only per-state counts. Never render a
+  // contradictory zero total when verified or pending items are present.
+  const total = Math.max(reportedTotal, verified + pending);
   return {
     id,
     label,
     total,
-    verified: number(raw.verified ?? raw.confirmed),
-    pending: number(raw.candidate ?? raw.pending ?? raw.unverified),
+    verified,
+    pending,
   };
 }
 

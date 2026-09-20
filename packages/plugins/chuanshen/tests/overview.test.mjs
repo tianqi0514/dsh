@@ -59,3 +59,21 @@ test('builds the visible space status and five writing-graph layers', async () =
   assert.equal(result.writingGraph.find(layer => layer.id === 'fact').verified, 5);
   assert.deepEqual(result.reasoning, { ready: false, blockerCount: 1 });
 });
+
+test('derives a non-zero writing-graph total from state counts when the platform omits total', async () => {
+  const client = {
+    async get(path) {
+      if (path.startsWith('/documents?')) return { items: [] };
+      if (path.startsWith('/jobs?')) return { jobs: [] };
+      if (path.startsWith('/writing-graph/governance/summary?')) return { counts: {
+        entity: { confirmed: 220, candidate: 3 },
+        fact: { verified: 263, pending: 0 },
+      } };
+      if (path.startsWith('/analysis/readiness?')) return { ready: true };
+      throw new Error(`unexpected ${path}`);
+    },
+  };
+  const result = await buildChuanshenSpaceOverview(client, 'space-with-state-counts', new AbortController().signal);
+  assert.equal(result.writingGraph.find(layer => layer.id === 'entity').total, 223);
+  assert.equal(result.writingGraph.find(layer => layer.id === 'fact').total, 263);
+});
