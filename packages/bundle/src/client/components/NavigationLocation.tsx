@@ -27,6 +27,38 @@ export function NavigationLocation({ usePanelInfo, panelToView, selectView }: Na
       // rather than while one feature's apply is still awaiting its services.
       const url = new URL(window.location.href);
       const requested = url.searchParams.get('workdsh-view') ?? (url.searchParams.get('diagnostics') === '1' ? 'diagnostics' : null);
+      const knownView = requested !== null && requested !== 'conversation' && Object.values(panelToView).includes(requested);
+      if (knownView) {
+        let cancelled = false;
+        let timer: number | undefined;
+        let attempts = 0;
+        const restoreKnownView = () => {
+          if (cancelled) return;
+          const selected = selectView(requested);
+          if (selected) {
+            initialized.current = true;
+            restoring.current = true;
+            return;
+          }
+          attempts += 1;
+          if (attempts < 80) {
+            timer = window.setTimeout(restoreKnownView, 25);
+            return;
+          }
+          // A known feature that never registered is unavailable in this
+          // installation. Preserve the existing safe fallback contract.
+          initialized.current = true;
+          restoring.current = true;
+          selectView(null);
+          url.searchParams.set('workdsh-view', 'conversation');
+          window.history.replaceState(window.history.state, '', url);
+        };
+        restoreKnownView();
+        return () => {
+          cancelled = true;
+          if (timer !== undefined) window.clearTimeout(timer);
+        };
+      }
       const selected = selectView(requested);
       initialized.current = true;
       restoring.current = true;
