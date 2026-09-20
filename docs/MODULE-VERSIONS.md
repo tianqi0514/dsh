@@ -30,7 +30,7 @@
 | --- | --- | --- | --- |
 | 领域公开契约 | 0.1 | `workdsh-contracts@0.1.0-alpha.9` | implemented |
 | 共享展示组件 | 0.1 | `workdsh-ui@0.1.0-alpha.6` | implemented |
-| 默认组合包 | 0.1 | `workdsh-bundle@0.1.0-alpha.48` | in_progress |
+| 默认组合包 | 0.1 | `workdsh-bundle@0.1.0-alpha.49` | in_progress |
 | 工作台 | 0.1 | `workdsh-plugin-workbench@0.1.0-alpha.12` | implemented |
 | 专家管理 | 0.1 | `workdsh-plugin-experts@0.1.0-alpha.5` | in_progress |
 | 技能管理 | 0.1 | `workdsh-plugin-skills@0.1.0-alpha.30` | implemented |
@@ -42,7 +42,7 @@
 | 项目管理 | 0.1 | `workdsh-plugin-projects@0.1.0-alpha.2` | in_progress |
 | 资料库 | 0.1 | `workdsh-plugin-library@0.1.0-alpha.2` | implemented |
 | 连接器管理 | 0.1 | `workdsh-plugin-connectors@0.1.0-alpha.1` | in_progress |
-| 传神智库插件 | 0.1 | `workdsh-plugin-chuanshen@0.1.0-alpha.2` | in_progress |
+| 传神智库插件 | 0.1 | `workdsh-plugin-chuanshen@0.1.0-alpha.3` | in_progress |
 
 2026-09-18 更新：bundle、experts、skills、office、activity、projects、library 跟随 DSH 0.1.6-alpha.2 升级 bump；contracts 补 bump α.9（补记 2026-09-17 项目任务上下文只读契约 `ProjectTaskContext`/`taskContext`，属兼容补全）；experts/office/activity 同时携带其未发布批次；公开发行仍以上次 prerelease 为准。
 

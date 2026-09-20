@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.0-alpha.3
+
+- 对旧版治理汇总接口兼容：缺少 `total` 时由已确认与待确认数量计算可见总数，避免出现“总数 0、已确认非 0”的矛盾展示。
+
 ## 0.1.0-alpha.2
 
 - Add a DSH-native 「传神智库」 workbench with live spaces, writing projects, Semantica readiness and five-layer writing-graph summaries; no iframe or second business database is introduced.

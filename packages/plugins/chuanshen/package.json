@@ -1,6 +1,6 @@
 {
   "name": "workdsh-plugin-chuanshen",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "private": false,
   "type": "module",
   "description": "NexusOne tools for Chuanshen knowledge ingestion, reasoning, calculation and writing",
