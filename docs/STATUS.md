@@ -1,3 +1,14 @@
+## 2026-09-20：传神智库能力在 DSH 原生可视化收口
+
+传神能力确认采用 DSH 原生 Cordis 插件 `workdsh-plugin-chuanshen` 接入：工具以官方 `defineTool()` / `ctx.tools.register()` 注册，DSH 负责会话、Agent 和交互，传神智库 FastAPI、Semantica 与确定性计算仍是业务权威；没有 iframe、第二套数据库或插件直连中间件。此前能力主要藏在 Agent 工具面，用户不易识别，本批新增原生侧栏入口、能力工作台和友好工具结果行。
+
+- 可视能力：46 项真实工具，按资料接入 7、知识与图谱 9、推演与测算 7、推演写作 13、事实联动 7、检查与交付 3 分组；提供“接入并加工资料”“生成推演报告”“演示事实联动”三个原生会话入口。
+- 实时概览：平台接口返回知识空间 12、写作项目 17、规则任务 1；选择“上财科研楼可研写作空间”后真实显示文档 6、后台任务 18、Entity 220、Claim 119、Fact 263、Relation 36。Evidence 当前为 0，保持上游汇总接口原值，不伪造数量。
+- 导航修复：`workdsh-bundle@0.1.0-alpha.53` 在 DSH 冷启动和首次运行声明期间保持 `workdsh-view=chuanshen`；真实浏览器刷新、等待插件加载并关闭声明后仍进入传神工作台。运行插件为 `workdsh-plugin-chuanshen@0.1.0-alpha.3`。
+- 验证：传神插件测试 13/13、集成测试 113/113（前序全量回归）、bundle build、版本锁检查（513 项，Cordis 4.0.2）和规划检查（30 模块/50 文档）通过；服务器三个 systemd 单元 active，源码/运行时 bundle 哈希一致，未认证入口返回 401。
+
+已知边界：当前插件使用服务器上受限平台服务账号访问智库，尚未实现 DSH 用户到智库用户的逐用户 OAuth 委托；平台若要按个人身份审计，后续需增加短期委托令牌。DSH 0.1.6-alpha.2 冷启动期间仍会产生上游 `SlotAssemblyError`/连接重试日志，但页面在插件完成注册后正常恢复，本批未修改官方框架源码。
+
 ## 2026-09-19：WorkDSH v0.1.0-alpha.6 公开发布回执
 
 按既定项目级发布流程完成 alpha.6 公开发布：源码提交 `debc429`（release: prepare）+ `ab096f0`（installer 测试断言修复）已推送 main（`8ba8626..debc429`），annotated tag `v0.1.0-alpha.6` 指向发布提交；GitHub prerelease [v0.1.0-alpha.6](https://github.com/techflag/workdsh/releases/tag/v0.1.0-alpha.6) 携带 13 个资产（九包 .tgz + SHA256SUMS + release-manifest.json + RELEASE-NOTES.md + install-workdsh.mjs），未发布 npm。
