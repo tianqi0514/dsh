@@ -18,8 +18,10 @@ const home = resolve(process.env.WORKDSH_PREVIEW_HOME ?? join(root, '.test-runti
 const artifacts = join(root, '.artifacts');
 const env = { ...process.env, DSH_HOME: home, PATH: `${join(root, 'node_modules/.bin')}:${dirname(process.execPath)}:${process.env.PATH}` };
 const exec = promisify(execFile);
+const installTimeoutMs = Number(process.env.WORKDSH_INSTALL_TIMEOUT_MS ?? 180_000);
+if (!Number.isFinite(installTimeoutMs) || installTimeoutMs < 60_000) throw new Error('WORKDSH_INSTALL_TIMEOUT_MS must be at least 60000.');
 const run = async (tool, args) => {
-  await exec(process.execPath, [join(root, 'node_modules', tool), ...args], { cwd: root, env, timeout: 60_000, maxBuffer: 8 * 1024 * 1024 });
+  await exec(process.execPath, [join(root, 'node_modules', tool), ...args], { cwd: root, env, timeout: installTimeoutMs, maxBuffer: 8 * 1024 * 1024 });
 };
 await mkdir(home, { recursive: true }); await mkdir(artifacts, { recursive: true });
 const tarballs = [];
