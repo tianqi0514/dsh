@@ -1,8 +1,13 @@
-# 0.1.0-alpha.46 — 2026-09-20
+# 0.1.0-alpha.47 — 2026-09-20
 
 - 通过 DSH 官方 `__DSH_FILE_UPLOAD__` 页面传输扩展点启用同源 Fetch 上传，修复部分 Chromium 中 Blob Worker URL 在加载前被撤销、所有文件均立即显示上传失败的问题。
 - 保留现有上传鉴权、会话归属、取消信号和服务端原始字节路由，不修改官方依赖包。
 - 补充附件目录权限约束：运行用户需对 `DSH_HOME` 的父目录具备读取和进入权限，否则官方不可变附件存储会以 `gateway/internal` 返回底层 `EACCES`。
+
+# 0.1.0-alpha.46 — 2026-09-18
+
+- 跟随 DSH 0.1.6-alpha.2 升级：组合包与功能插件的官方依赖精确锁定同步至 `0.1.6-alpha.2`；projects、experts、skills、library、office、activity 六个客户端插件完成 Client Session 迁移。
+- 外部 URL 契约一次性变化（随「助理」「定时任务」「更多」未实现入口隐藏）：`?workdsh-view=assistant|automation|more` 外部链接不再切换视图，静默回落到对话视图且不报错；项目任务改由原生会话导航打开，旧链接遗留的 `?task=` 参数在项目面板打开时被清理。
 
 # 0.1.0-alpha.45 — 2026-09-15
 
